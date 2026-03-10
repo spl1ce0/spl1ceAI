@@ -22,7 +22,7 @@ class Dev(commands.Cog):
         await ctx.reply("Yes I'm alive, broski. <:CC_yellow_look:1440119405991166186>")
 
 
-    @commands.hybrid_command(hidden=True)
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def load(self, ctx, *, extension: str):
         """Loads an Extension."""
@@ -34,7 +34,7 @@ class Dev(commands.Cog):
         else:
             await ctx.message.add_reaction('✅')
 
-    @commands.hybrid_command(hidden=True)
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def unload(self, ctx, *, extension: str):
         """Unloads an Extension."""
@@ -47,7 +47,7 @@ class Dev(commands.Cog):
             await ctx.message.add_reaction('✅')
 
 
-    @commands.hybrid_command(name="reload", aliases=['r'], hidden=True, invoke_without_command=True)
+    @commands.command(name="reload", aliases=['r'], hidden=True, invoke_without_command=True)
     @commands.is_owner()
     async def reload(self, ctx, *, extension: str):
         """Reloads an Extension."""
@@ -62,7 +62,7 @@ class Dev(commands.Cog):
 
 
 
-    @commands.hybrid_group(fallback="guild", invoke_wihout_command=True)
+    @commands.group(name='sync_commands')
     @commands.is_owner()
     @commands.guild_only()
     async def sync(self, ctx: Context, guild_id: Optional[int], copy: bool = False) -> None:
@@ -91,9 +91,10 @@ class Dev(commands.Cog):
         await ctx.reply(f'Successfully synced {len(commands)} commands globally')
 
     
-    @commands.hybrid_command(name='clear')
+    @commands.command(name='clear_commands')
+    @commands.guild_only()
     @commands.is_owner()
-    async def clear(self, ctx: Context, guild_id: int = None) -> None:
+    async def clear_commands(self, ctx: Context, guild_id: int = None) -> None:
         
 
         if guild_id:
@@ -101,7 +102,7 @@ class Dev(commands.Cog):
         else:
             guild = ctx.guild
 
-        self.bot.tree.clear_commands(guild=None)
+        self.bot.tree.clear_commands(guild=guild)
         
         await ctx.reply(f'Successfully cleared all commands')
 
