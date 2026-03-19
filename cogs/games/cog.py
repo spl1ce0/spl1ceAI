@@ -2,7 +2,6 @@
 from discord.ext import commands
 from discord import ui
 
-from typing import List
 from .connect4 import CFGame
 from .connect4 import MCTSPlayer
 
