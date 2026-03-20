@@ -1,8 +1,6 @@
-import discord
 from discord.ext import commands
 from discord.ext.commands import Context, GuildConverter
 
-from typing import Optional
 import logging
 
 
@@ -15,13 +13,11 @@ class Dev(commands.Cog):
         self.bot = bot
 
 
-
     @commands.hybrid_command(name="are_you_alive", aliases=["alive", "are_u_alive", "areualive"])
     async def alive(self, ctx):
         """Tells if the bot is alive."""
 
         await ctx.reply("Yes I'm alive, broski. <:CC_yellow_look:1440119405991166186>")
-
 
 
     @commands.group(name='sync')
@@ -100,7 +96,6 @@ class Dev(commands.Cog):
         else:
             await ctx.message.add_reaction('✅')
         
-
 
 
     @reload.command(name='all')
@@ -189,7 +184,6 @@ class Dev(commands.Cog):
             await ctx.message.add_reaction('✅')
 
 
-    
 
     @commands.group(name='command_remove')
     @commands.is_owner()
@@ -209,8 +203,6 @@ class Dev(commands.Cog):
             await ctx.message.add_reaction('❌')
 
     
-
-
     @command_remove.command(name='all')
     @commands.is_owner()
     async def command_remove_all(self, ctx, *, guild: str = None):
