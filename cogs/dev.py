@@ -43,8 +43,8 @@ class Dev(commands.Cog):
     @commands.is_owner()
     @commands.guild_only()
     async def sync_local(self, ctx: Context):
-        """Syncs the commands globally"""
-        commands = await self.bot.tree.sync(guild=None)
+        """Syncs the commands locally"""
+        commands = await self.bot.tree.sync(guild=ctx.guild)
         await ctx.message.add_reaction('✅')
         await ctx.reply(f'Synced {len(commands)} commands locally.')
 
