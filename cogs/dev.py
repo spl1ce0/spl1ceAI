@@ -2,6 +2,8 @@ from discord.ext import commands
 from discord.ext.commands import Context, GuildConverter
 
 import logging
+import subprocess
+import os
 
 
 logger = logging.getLogger(__name__)
@@ -182,6 +184,15 @@ class Dev(commands.Cog):
             await ctx.reply("\n".join(message_lines))
         else:
             await ctx.message.add_reaction('✅')
+
+
+
+    @commands.command(name='update')
+    @commands.is_owner()
+    async def update(self, ctx):
+        """Runs the update.sh script to update the bot."""
+        await ctx.reply("Update initiated.")
+        subprocess.run(['./update.sh'])
 
 
 
