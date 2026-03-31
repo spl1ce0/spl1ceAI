@@ -1,14 +1,11 @@
-from aiohttp import ClientSession
-import discord
-from discord.ext import commands
-
-from typing import List, Optional, Callable
-
+import asyncio
 import logging
 from logging import handlers
-import asyncio
+from typing import List, Optional
 
-
+import discord
+from aiohttp import ClientSession
+from discord.ext import commands
 
 TEST_GUILD_ID = 1027212609608491148
 
@@ -16,7 +13,6 @@ log = logging.getLogger(__name__)
 
 
 class Spl1ceAI(commands.AutoShardedBot):
-
     def __init__(
         self,
         *args,
@@ -28,14 +24,12 @@ class Spl1ceAI(commands.AutoShardedBot):
     ):
 
         super().__init__(
-            command_prefix=commands.when_mentioned_or("!"),
-            *args,
-            **kwargs)
-        #self.db_pool = db_pool
+            command_prefix=commands.when_mentioned_or("="), *args, **kwargs
+        )
+        # self.db_pool = db_pool
         self.web_client = web_client
         self.testing_guild_id = testing_guild_id
         self.initial_extensions = initial_extensions
-
 
     async def setup_hook(self) -> None:
         # here, we are loading extensions prior to sync to ensure we are syncing interactions defined in those extensions.
@@ -56,15 +50,10 @@ class Spl1ceAI(commands.AutoShardedBot):
         # This would also be a good place to connect to our database and
         # load anything that should be in memory prior to handling events.
 
-
-    
-
     async def start(self) -> None:
-        with open('token.txt', 'r') as file:
+        with open("token.txt", "r") as file:
             token = file.read()
             await super().start(token, reconnect=True)
-
-
 
 
 async def main():
@@ -78,14 +67,16 @@ async def main():
     logger.setLevel(logging.INFO)
 
     handler = logging.handlers.RotatingFileHandler(
-        filename='discord.log',
-        encoding='utf-8',
+        filename="discord.log",
+        encoding="utf-8",
         maxBytes=32 * 1024 * 1024,  # 32 MiB
         backupCount=5,  # Rotate through 5 files
     )
 
-    dt_fmt = '%Y-%m-%d %H:%M:%S'
-    formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
+    dt_fmt = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(
+        "[{asctime}] [{levelname:<8}] {name}: {message}", dt_fmt, style="{"
+    )
     handler.setFormatter(formatter)
     # logger.addHandler(handler)
 
@@ -100,12 +91,12 @@ async def main():
     # A web client session is used to
 
     # if i need a database, add the following
-    #  
+    #
     # asyncpg.create_pool(user='postgres', command_timeout=30) as pool:
 
-    async with ClientSession() as client: 
+    async with ClientSession() as client:
         # starting the bot
-        
+
         # intents
         intents = discord.Intents.default()
         intents.message_content = True
@@ -119,7 +110,6 @@ async def main():
             testing_guild_id=TEST_GUILD_ID,
         ) as bot:
             await bot.start()
-
 
 
 if __name__ == "__main__":

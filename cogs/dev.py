@@ -1,6 +1,9 @@
-from discord.ext import commands
+from discord.ext import commands as cmds
 from discord.ext.commands import Context, GuildConverter
 
+import discord
+import typing
+from typing import Optional
 import logging
 import subprocess
 import os
@@ -9,90 +12,53 @@ import os
 logger = logging.getLogger(__name__)
 
 
-class Dev(commands.Cog):
+class Dev(cmds.Cog):
 
     def __init__(self, bot):
         self.bot = bot
 
 
-    @commands.hybrid_command(name="are_you_alive", aliases=["alive", "are_u_alive", "areualive"])
+    @cmds.hybrid_command(name="are_you_alive", aliases=["alive", "are_u_alive", "areualive"])
     async def alive(self, ctx):
         """Tells if the bot is alive."""
 
         await ctx.reply("Yes I'm alive, broski. <:CC_yellow_look:1440119405991166186>")
 
 
-    @commands.group(name='sync')
-    @commands.is_owner()
-    @commands.guild_only()
-    async def sync(self, ctx: Context, guild: str) -> None:
-        """Syncs the commands within the given guild"""
-        if guild:
-            guild = GuildConverter().convert(guild)
-        else:
-            await ctx.message.add_reaction('❌')
-            await ctx.reply('Please provide a guild.')
-            return
 
-        commands = await self.bot.tree.sync(guild=guild)
-        await ctx.message.add_reaction('✅')
-        await ctx.reply(f'Successfully synced {len(commands)} commands')
-
-
-    @sync.command(name='local')
-    @commands.is_owner()
-    @commands.guild_only()
-    async def sync_local(self, ctx: Context):
-        """Syncs the commands locally"""
-        commands = await self.bot.tree.sync(guild=ctx.guild)
-        await ctx.message.add_reaction('✅')
-        await ctx.reply(f'Synced {len(commands)} commands locally.')
-
-
-    @sync.command(name='global')
-    @commands.is_owner()
-    async def sync_global(self, ctx: Context):
-        """Syncs the commands globally"""
-        commands = await self.bot.tree.sync(guild=None)
-        await ctx.message.add_reaction('✅')
-        await ctx.reply(f'Synced {len(commands)} commands globally.')
-
-
-
-
-    @commands.group(name='reload')
-    @commands.is_owner()
+    @cmds.group(name='reload')
+    @cmds.is_owner()
     async def reload(self, ctx: Context, *, extension: str):
         """Reloads an extension."""
         try:
             await self.bot.reload_extension("cogs."+extension)
-        except commands.ExtensionError as e:
+        except cmds.ExtensionError as e:
             await ctx.message.add_reaction('❌')
             logger.error(f'{e.__class__.__name__}: {e}')
         else:
             await ctx.message.add_reaction('✅')
 
 
-    @commands.group(name='load')
-    @commands.is_owner()
+    @cmds.group(name='load')
+    @cmds.is_owner()
     async def load(self, ctx: Context, *, extension: str):
         """Loads an extension."""
         try:
             await self.bot.load_extension("cogs."+extension)
-        except commands.ExtensionError as e:
+        except cmds.ExtensionError as e:
             await ctx.message.add_reaction('❌')
             logger.error(f'{e.__class__.__name__}: {e}')
         else:
             await ctx.message.add_reaction('✅')
         
 
-    @commands.group(name='unload')
-    @commands.is_owner()
+    @cmds.group(name='unload')
+    @cmds.is_owner()
     async def unload(self, ctx: Context, *, extension: str):
         """Unloads an extension."""
         try:
             await self.bot.unload_extension("cogs."+extension)
-        except commands.ExtensionError as e:
+        except cmds.ExtensionError as e:
             await ctx.message.add_reaction('❌')
             logger.error(f'{e.__class__.__name__}: {e}')
         else:
@@ -101,7 +67,7 @@ class Dev(commands.Cog):
 
 
     @reload.command(name='all')
-    @commands.is_owner()
+    @cmds.is_owner()
     async def reload_all(self, ctx: Context):
         """Reloads every extension."""
         extensions = list(self.bot.extensions.keys())
@@ -129,7 +95,7 @@ class Dev(commands.Cog):
     
 
     @load.command(name='all')
-    @commands.is_owner()
+    @cmds.is_owner()
     async def load_all(self, ctx: Context):
         """Loads every extension in `bot.initial_extensions` that isn't already loaded."""
         extensions = [
@@ -160,7 +126,7 @@ class Dev(commands.Cog):
     
 
     @unload.command(name='all')
-    @commands.is_owner()
+    @cmds.is_owner()
     async def unload_all(self, ctx: Context):
         """Unloads every extension."""
         extensions = list(self.bot.extensions.keys())
@@ -187,8 +153,8 @@ class Dev(commands.Cog):
 
 
 
-    @commands.command(name='update')
-    @commands.is_owner()
+    @cmds.command(name='update')
+    @cmds.is_owner()
     async def update(self, ctx):
         """Runs the update.sh script to update the bot."""
         await ctx.reply("Update initiated.")
@@ -196,42 +162,74 @@ class Dev(commands.Cog):
 
 
 
-    @commands.group(name='command_remove')
-    @commands.is_owner()
-    async def command_remove(self, ctx, command: str, *, guild: str = None):
-        if guild:
-            if guild == 'global':
-                guild = None
-            else:
-                guild = GuildConverter(guild)
-        else:
-            guild = ctx.guild
-
-        command = self.bot.tree.remove_command(name=command, guild=guild)
-        if command:
-            await ctx.message.add_reaction('✅')
+    @cmds.group(name='commands')
+    @cmds.is_owner()
+    async def commands(self, ctx):
+        pass
+        
+    
+    @commands.command(name='remove')
+    @cmds.is_owner()
+    async def remove(self, ctx: Context, command: str, scope: Optional[str], guild: Optional[discord.Guild] = None):
+        """Removes a command from the tree. If no guild is provided, removes it globally."""
+        if scope == 'local':
+            target = target or str(ctx.guild.id)
+            guild = await GuildConverter().convert(ctx, target)
+        elif scope == 'global':
+            guild = None
         else:
             await ctx.message.add_reaction('❌')
-
+            return
+        
+        try:
+            self.bot.tree.remove_command(command, guild=guild)
+            await ctx.message.add_reaction('✅')
+        except Exception as e:
+            logger.error(f"Remove command failed: {e}")
+            await ctx.message.add_reaction('❌')
+        
     
-    @command_remove.command(name='all')
-    @commands.is_owner()
-    async def command_remove_all(self, ctx, *, guild: str = None):
-        if guild:
-            if guild == 'global':
-                guild = None
-            else:
-                guild = GuildConverter(guild)
+    @commands.command(name='clear')
+    @cmds.is_owner()
+    async def clear(self, ctx: Context, scope: Optional[str], target: Optional[str] = None):
+        """Clears commands from the tree. If no guild is provided, clears globally."""
+
+        if scope == 'local':
+            target = target or str(ctx.guild.id)
+            guild = await GuildConverter().convert(ctx, target)
+        elif scope == 'global':
+            guild = None
         else:
-            guild = ctx.guild
+            await ctx.message.add_reaction('❌')
+            return
 
         try:
             self.bot.tree.clear_commands(guild=guild)
             await ctx.message.add_reaction('✅')
         except Exception as e:
-            logging.error(e)
+            logger.error(f"Clear commands failed: {e}")
             await ctx.message.add_reaction('❌')
 
+
+    @commands.command(name='sync')
+    @cmds.is_owner()
+    async def sync(self, ctx: Context, scope: Optional[str] = None, target: Optional[str] = None):
+        """Syncs commands to the tree."""
+        if scope == 'local':
+            target = target or str(ctx.guild.id)
+            guild = await GuildConverter().convert(ctx, target)
+        elif scope == 'global':
+            guild = None
+        else:
+            await ctx.message.add_reaction('❌')
+            return
+        
+        try: 
+            await self.bot.tree.sync(guild=guild)
+            await ctx.message.add_reaction('✅')
+        except Exception as e:
+            logger.error(f"Sync command failed: {e}")
+            await ctx.message.add_reaction('❌')
 
 
 async def setup(bot):
