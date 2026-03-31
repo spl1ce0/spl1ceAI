@@ -38,15 +38,6 @@ class Spl1ceAI(commands.AutoShardedBot):
             log.info(f"Extension {extension} loaded")
             await self.load_extension(extension)
 
-        #'''
-        if self.testing_guild_id:
-            guild = discord.Object(self.testing_guild_id)
-
-            self.tree.copy_global_to(guild=guild)
-
-            await self.tree.sync(guild=guild)
-        #'''
-
         # This would also be a good place to connect to our database and
         # load anything that should be in memory prior to handling events.
 
