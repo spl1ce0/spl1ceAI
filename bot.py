@@ -24,7 +24,7 @@ class Spl1ceAI(commands.AutoShardedBot):
     ):
 
         super().__init__(
-            command_prefix=commands.when_mentioned_or("="), *args, **kwargs
+            command_prefix=commands.when_mentioned_or("!"), *args, **kwargs
         )
         # self.db_pool = db_pool
         self.web_client = web_client
