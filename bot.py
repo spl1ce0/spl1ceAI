@@ -1,9 +1,12 @@
 import asyncio
 import logging
+import json
+import time
 from logging import handlers
 from typing import List, Optional
 
 import discord
+import asqlite
 from aiohttp import ClientSession
 from discord.ext import commands
 
@@ -24,22 +27,66 @@ class Spl1ceAI(commands.AutoShardedBot):
     ):
 
         super().__init__(
-            command_prefix=commands.when_mentioned_or("!"), *args, **kwargs
+            command_prefix=commands.when_mentioned_or("="), *args, **kwargs
         )
         # self.db_pool = db_pool
         self.web_client = web_client
         self.testing_guild_id = testing_guild_id
         self.initial_extensions = initial_extensions
+        self.db: asqlite.Connection = None
 
     async def setup_hook(self) -> None:
-        # here, we are loading extensions prior to sync to ensure we are syncing interactions defined in those extensions.
+        # Initialize database
+        self.db = await asqlite.connect("bot.db")
+        
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT)"
+            )
+            await self.db.commit()
 
+        # Check for restart info
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT value FROM system_state WHERE key = 'restart_info'")
+            row = await cursor.fetchone()
+            
+            if row:
+                restart_data = json.loads(row[0])
+                self.loop.create_task(self.handle_restart_reaction(restart_data))
+                await cursor.execute("DELETE FROM system_state WHERE key = 'restart_info'")
+                await self.db.commit()
+
+        # loading extensions prior to sync to ensure we are syncing interactions defined in those extensions.
         for extension in self.initial_extensions:
             log.info(f"Extension {extension} loaded")
             await self.load_extension(extension)
 
-        # This would also be a good place to connect to our database and
-        # load anything that should be in memory prior to handling events.
+    async def handle_restart_reaction(self, data):
+        """Re-fetches the restart message once the bot is ready to react and report time."""
+        await self.wait_until_ready()
+        
+        channel = self.get_channel(data['channel_id'])
+        if channel:
+            try:
+                message = await channel.fetch_message(data['message_id'])
+                try:
+                    await message.remove_reaction('🔄', self.user)
+                except Exception:
+                    pass # Fallback if reaction can't be removed
+                
+                await message.add_reaction('✅')
+                
+                # Calculate time taken
+                end_time = time.time()
+                duration = end_time - data['start_time']
+                await channel.send(f"🚀 Back online! Boot time: `{duration:.2f}s`", reference=message)
+            except Exception as e:
+                log.error(f"Failed to react to restart message: {e}")
+
+    async def close(self) -> None:
+        if self.db:
+            await self.db.close()
+        await super().close()
 
     async def start(self) -> None:
         with open("token.txt", "r") as file:

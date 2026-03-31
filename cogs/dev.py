@@ -7,6 +7,9 @@ from typing import Optional
 import logging
 import subprocess
 import os
+import asyncio
+import time
+import json
 
 
 logger = logging.getLogger(__name__)
@@ -164,8 +167,41 @@ class Dev(cmds.Cog):
     @cmds.is_owner()
     async def update(self, ctx):
         """Runs the update.sh script to update the bot."""
-        await ctx.reply("Update initiated.")
+        await ctx.message.add_reaction('🔄')
+        
+        data = {
+            'channel_id': ctx.channel.id,
+            'message_id': ctx.message.id,
+            'start_time': time.time()
+        }
+        await self.bot.db.execute(
+            "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+            ('restart_info', json.dumps(data))
+        )
+        await self.bot.db.commit()
+            
         subprocess.run(['./update.sh'])
+
+
+    @cmds.command(name='restart')
+    @cmds.is_owner()
+    async def restart(self, ctx):
+        """Restarts the bot by closing the connection and letting the service manager restart it."""
+        await ctx.message.add_reaction('🔄')
+        
+        data = {
+            'channel_id': ctx.channel.id,
+            'message_id': ctx.message.id,
+            'start_time': time.time()
+        }
+        await self.bot.db.execute(
+            "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+            ('restart_info', json.dumps(data))
+        )
+        await self.bot.db.commit()
+            
+        await asyncio.sleep(1)
+        await self.bot.close()
 
 
 
