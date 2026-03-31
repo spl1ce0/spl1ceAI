@@ -25,11 +25,19 @@ class Dev(cmds.Cog):
         await ctx.reply("Yes I'm alive, broski. <:CC_yellow_look:1440119405991166186>")
 
 
-
-    @cmds.group(name='reload')
+    @cmds.group(name='extensions', aliases=['ext'])
     @cmds.is_owner()
-    async def reload(self, ctx: Context, *, extension: str):
-        """Reloads an extension."""
+    async def extensions(self, ctx: Context):
+        pass
+
+
+    @extensions.command(name='reload')
+    @cmds.is_owner()
+    async def extensions_reload(self, ctx: Context, *, extension: str):
+        if extension == 'all':
+            await self.reload_all(ctx)
+            return
+
         try:
             await self.bot.reload_extension("cogs."+extension)
         except cmds.ExtensionError as e:
@@ -39,10 +47,13 @@ class Dev(cmds.Cog):
             await ctx.message.add_reaction('✅')
 
 
-    @cmds.group(name='load')
+    @extensions.command(name='load')
     @cmds.is_owner()
-    async def load(self, ctx: Context, *, extension: str):
-        """Loads an extension."""
+    async def extensions_load(self, ctx: Context, *, extension: str):
+        if extension == 'all':
+            await self.load_all(ctx)
+            return
+        
         try:
             await self.bot.load_extension("cogs."+extension)
         except cmds.ExtensionError as e:
@@ -52,10 +63,13 @@ class Dev(cmds.Cog):
             await ctx.message.add_reaction('✅')
         
 
-    @cmds.group(name='unload')
+    @extensions.command(name='unload')
     @cmds.is_owner()
-    async def unload(self, ctx: Context, *, extension: str):
-        """Unloads an extension."""
+    async def extensions_unload(self, ctx: Context, *, extension: str):
+        if extension == 'all':
+            await self.unload_all(ctx)
+            return
+
         try:
             await self.bot.unload_extension("cogs."+extension)
         except cmds.ExtensionError as e:
@@ -65,9 +79,6 @@ class Dev(cmds.Cog):
             await ctx.message.add_reaction('✅')
         
 
-
-    @reload.command(name='all')
-    @cmds.is_owner()
     async def reload_all(self, ctx: Context):
         """Reloads every extension."""
         extensions = list(self.bot.extensions.keys())
@@ -94,8 +105,6 @@ class Dev(cmds.Cog):
             await ctx.message.add_reaction('✅')
     
 
-    @load.command(name='all')
-    @cmds.is_owner()
     async def load_all(self, ctx: Context):
         """Loads every extension in `bot.initial_extensions` that isn't already loaded."""
         extensions = [
@@ -125,8 +134,6 @@ class Dev(cmds.Cog):
             await ctx.message.add_reaction('✅')
     
 
-    @unload.command(name='all')
-    @cmds.is_owner()
     async def unload_all(self, ctx: Context):
         """Unloads every extension."""
         extensions = list(self.bot.extensions.keys())
