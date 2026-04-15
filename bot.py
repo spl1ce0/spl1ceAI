@@ -9,6 +9,10 @@ import discord
 import asqlite
 from aiohttp import ClientSession
 from discord.ext import commands
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 TEST_GUILD_ID = 1027212609608491148
 
@@ -42,6 +46,12 @@ class Spl1ceAI(commands.AutoShardedBot):
         async with self.db.cursor() as cursor:
             await cursor.execute(
                 "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT)"
+            )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS ai_summon (channel_id INTEGER PRIMARY KEY, expiry REAL)"
+            )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS ai_usage (day TEXT PRIMARY KEY, request_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0)"
             )
             await self.db.commit()
 
@@ -138,7 +148,7 @@ async def main():
         # intents
         intents = discord.Intents.default()
         intents.message_content = True
-        exts = ["cogs.games", "cogs.dev", "cogs.troll", "cogs.fun"]
+        exts = ["cogs.games", "cogs.dev", "cogs.troll", "cogs.fun", "cogs.ai"]
 
         async with Spl1ceAI(
             # db_pool=pool,

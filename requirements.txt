@@ -13,3 +13,5 @@ numpy==2.4.1
 propcache==0.4.1
 yarl==1.22.0
 yt-dlp
+google-genai
+python-dotenv
