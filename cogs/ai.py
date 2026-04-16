@@ -17,14 +17,12 @@ class AI(commands.Cog):
         if not api_key:
             logger.error("GEMINI_API_KEY not found in environment variables.")
         
-        # Initialize the new Client
         self.client = genai.Client(api_key=api_key)
         self.model_name = 'gemini-flash-latest'
-        self.active_summons = {} # Cache for active summons: {channel_id: {'expiry': expiry, 'tokens': 0}}
+        self.active_summons = {}
         self.DAILY_TOKEN_LIMIT = 1000000
 
     async def cog_load(self):
-        # Load active summons from DB into cache
         async with self.bot.db.cursor() as cursor:
             await cursor.execute("SELECT channel_id, expiry FROM ai_summon")
             rows = await cursor.fetchall()
@@ -78,6 +76,8 @@ class AI(commands.Cog):
         if unit == 'h': return amount * 3600
         return None
 
+
+
     @commands.hybrid_command(name="summarize")
     @commands.guild_only()
     async def summarize(self, ctx, limit: str):
@@ -92,10 +92,8 @@ class AI(commands.Cog):
             
         await ctx.defer(ephemeral=True)
 
-        
         messages = []
         try:
-            # Check if limit is a time (e.g., 10m) or a count (e.g., 50)
             if limit.isdigit():
                 count = int(limit)
                 if count > 100: count = 100 # Safety limit
@@ -153,6 +151,7 @@ class AI(commands.Cog):
                     except:
                         pass
 
+
     @commands.hybrid_command(name="ask", aliases=["llm", "ai"])
     @commands.guild_only()
     async def ask(self, ctx, *, question: str):
@@ -169,7 +168,6 @@ class AI(commands.Cog):
 
         history = []
         
-        # If it's a reply, fetch context
         if ctx.message.reference:
             try:
                 current_msg = ctx.message
@@ -212,9 +210,7 @@ class AI(commands.Cog):
             
             await self.update_usage(response)
             
-            # Discord message limit is 2000 chars
             if len(response.text) > 2000:
-                # Simple split for now
                 parts = [response.text[i:i+1900] for i in range(0, len(response.text), 1900)]
                 for part in parts:
                     await ctx.send(part)
@@ -237,6 +233,7 @@ class AI(commands.Cog):
                         await ctx.message.add_reaction('❌')
                     except:
                         pass
+
 
     @commands.hybrid_command(name="summon")
     @commands.guild_only()
@@ -268,13 +265,14 @@ class AI(commands.Cog):
         time_str = discord.utils.format_dt(datetime.datetime.fromtimestamp(expiry), style='R')
         await ctx.reply(f"**spl1ceAI summoned.** I will answer mentions and replies.\n-# Ends {time_str}")
 
+
     @commands.group(name="stats", invoke_without_command=True)
     async def stats_group(self, ctx):
         """AI related statistics."""
         pass
 
+
     @stats_group.command(name="usage")
-    @commands.is_owner()
     async def usage(self, ctx):
         """Shows today's AI usage statistics."""
         today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
@@ -288,6 +286,8 @@ class AI(commands.Cog):
             else:
                 await ctx.reply(f"📊 **AI Usage Today ({today})**\nNo usage recorded today.")
 
+
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
@@ -297,7 +297,6 @@ class AI(commands.Cog):
         if channel_id not in self.active_summons:
             return
 
-        # Check expiry
         now = datetime.datetime.now().timestamp()
         if now > self.active_summons[channel_id]['expiry']:
             tokens_used = self.active_summons[channel_id]['tokens']
@@ -312,7 +311,6 @@ class AI(commands.Cog):
                 pass
             return
 
-        # Trigger if mentioned or replied to
         is_mentioned = self.bot.user in message.mentions
         is_reply_to_bot = False
         if message.reference and message.reference.message_id:
@@ -381,6 +379,7 @@ class AI(commands.Cog):
                             await message.add_reaction('❌')
                         except:
                             pass
+
 
 async def setup(bot):
     await bot.add_cog(AI(bot))

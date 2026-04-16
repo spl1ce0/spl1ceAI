@@ -40,7 +40,6 @@ class Spl1ceAI(commands.AutoShardedBot):
         self.db: asqlite.Connection = None
 
     async def setup_hook(self) -> None:
-        # Initialize database
         self.db = await asqlite.connect("bot.db")
         
         async with self.db.cursor() as cursor:
@@ -55,7 +54,6 @@ class Spl1ceAI(commands.AutoShardedBot):
             )
             await self.db.commit()
 
-        # Check for restart info
         async with self.db.cursor() as cursor:
             await cursor.execute("SELECT value FROM system_state WHERE key = 'restart_info'")
             row = await cursor.fetchone()
@@ -66,7 +64,6 @@ class Spl1ceAI(commands.AutoShardedBot):
                 await cursor.execute("DELETE FROM system_state WHERE key = 'restart_info'")
                 await self.db.commit()
 
-        # loading extensions prior to sync to ensure we are syncing interactions defined in those extensions.
         for extension in self.initial_extensions:
             log.info(f"Extension {extension} loaded")
             await self.load_extension(extension)
@@ -82,11 +79,10 @@ class Spl1ceAI(commands.AutoShardedBot):
                 try:
                     await message.remove_reaction('🔄', self.user)
                 except Exception:
-                    pass # Fallback if reaction can't be removed
+                    pass
                 
                 await message.add_reaction('✅')
                 
-                # Calculate time taken
                 end_time = time.time()
                 duration = end_time - data['start_time']
                 await channel.send(f"🚀 Back online! Boot time: `{duration:.2f}s`", reference=message)
@@ -99,26 +95,23 @@ class Spl1ceAI(commands.AutoShardedBot):
         await super().close()
 
     async def start(self) -> None:
-        with open("token.txt", "r") as file:
-            token = file.read()
-            await super().start(token, reconnect=True)
+        token = os.getenv("DISCORD_TOKEN")
+        if not token:
+            log.error("DISCORD_TOKEN not found in environment variables.")
+            return
+        await super().start(token, reconnect=True)
 
 
 async def main():
-    # logging
-
-    # for this example, we're going to set up a rotating file logger.
-    # for more info on setting up logging,
-    # see https://discordpy.readthedocs.io/en/latest/logging.html and https://docs.python.org/3/howto/logging.html
-
+    
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
 
     handler = logging.handlers.RotatingFileHandler(
         filename="discord.log",
         encoding="utf-8",
-        maxBytes=32 * 1024 * 1024,  # 32 MiB
-        backupCount=5,  # Rotate through 5 files
+        maxBytes=32 * 1024 * 1024, 
+        backupCount=5,  
     )
 
     dt_fmt = "%Y-%m-%d %H:%M:%S"
@@ -128,19 +121,8 @@ async def main():
     handler.setFormatter(formatter)
     # logger.addHandler(handler)
 
-    # Alternatively, you could use:
     discord.utils.setup_logging(handler=handler, formatter=formatter, root=True)
 
-    # One of the reasons to take over more of the process though
-    # is to ensure use with other libraries or tools which also require their own cleanup.
-
-    # Here we have a web client and a database pool, both of which do cleanup at exit.
-    # We also have our bot, which depends on both of these.
-    # A web client session is used to
-
-    # if i need a database, add the following
-    #
-    # asyncpg.create_pool(user='postgres', command_timeout=30) as pool:
 
     async with ClientSession() as client:
         # starting the bot
