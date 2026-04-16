@@ -190,16 +190,17 @@ class AI(commands.Cog):
                 logger.warning(f"Failed to fetch reply chain: {e}")
 
         try:
+            today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
             async with ctx.typing():
                 chat = self.client.chats.create(
                     model=self.model_name, 
                     history=history,
                     config=types.GenerateContentConfig(
                         system_instruction=(
-                            "You are spl1ceAI, a chill Discord bot. Your creator and owner is spl1ce. "
-                            "ADAPT YOUR TONE: If the conversation is serious/technical, be helpful and provide concise detail. "
+                            f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
+                            "ADAPT YOUR TONE: Match the user's energy. If they are serious/technical, be helpful, concise, coherent and valuable. "
                             "If it's banter, memes, or trolling, vibe with it and be funny/short. "
-                            "Always match the energy of the user. Reply conversationally and briefly. "
+                            "Always match the energy of the user. Reply conversationally and if there's not much to say, don't say much. "
                             "Do NOT prefix your message with your name or 'spl1ceAI:'. Just answer directly. "
                             "If a message is pure nonsensical spam, reply with '[IGNORE]'."
                         )
@@ -331,6 +332,7 @@ class AI(commands.Cog):
                 
             async with message.channel.typing():
                 try:
+                    today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
                     # Fetch context (last 20 messages)
                     history_msgs = []
                     async for msg in message.channel.history(limit=25):
@@ -346,10 +348,11 @@ class AI(commands.Cog):
                         history=history_msgs,
                         config=types.GenerateContentConfig(
                             system_instruction=(
-                                "You are spl1ceAI, a chill Discord bot in a group chat. Your creator and owner is spl1ce. "
-                                "ADAPT YOUR TONE: Match the user's energy. If they are serious/technical, be helpful and brief. "
-                                "If they are banter-heavy or trolling, vibe with it. "
-                                "Reply extremely briefly to the SPECIFIC message. "
+                                f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
+                                "Your creator and owner is spl1ce. Current date: {today_str}. "
+                                "ADAPT YOUR TONE: Match the user's energy. If they are serious/technical, be helpful, concise, coherent and valuable. "
+                                "If it's banter, memes, or trolling, vibe with it and be funny/short. "
+                                "Reply to the SPECIFIC message. "
                                 "Do NOT address the whole room unless necessary. "
                                 "Do NOT prefix your message with your name or 'spl1ceAI:'. Just answer directly. "
                                 "If the message is pure nonsensical spam, reply with '[IGNORE]'."
