@@ -196,6 +196,7 @@ class AI(commands.Cog):
                     model=self.model_name, 
                     history=history,
                     config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
                         system_instruction=(
                             f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
                             "ADAPT YOUR TONE: Match the user's energy. If they are serious/technical, be helpful, concise, coherent and valuable. "
@@ -347,6 +348,7 @@ class AI(commands.Cog):
                         model=self.model_name, 
                         history=history_msgs,
                         config=types.GenerateContentConfig(
+                            tools=[types.Tool(google_search=types.GoogleSearch())],
                             system_instruction=(
                                 f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
                                 "Your creator and owner is spl1ce. Current date: {today_str}. "
