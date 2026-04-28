@@ -45,8 +45,8 @@ class AI(commands.Cog):
         if not hasattr(response, 'usage_metadata') or not response.usage_metadata:
             return
         
-        in_tokens = response.usage_metadata.prompt_token_count
-        out_tokens = response.usage_metadata.candidates_token_count
+        in_tokens = response.usage_metadata.prompt_token_count or 0
+        out_tokens = response.usage_metadata.candidates_token_count or 0
         total = in_tokens + out_tokens
         
         today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
@@ -199,17 +199,28 @@ class AI(commands.Cog):
                         tools=[types.Tool(google_search=types.GoogleSearch())],
                         system_instruction=(
                             f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
+                            "CRITICAL TONE CONSTRAINT: NEVER yap. Be extremely concise. Give brief, direct answers. Avoid paragraphs unless explicitly asked for detail. "
                             "ADAPT YOUR TONE: First, detect user intent. "
-                            "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or insensitive as part of the vibe. Keep it short. "
-                            "IF SERIOUS/TECHNICAL/REAL TALK: Be helpful, valuable, and coherent. Provide high-quality answers and show empathy where appropriate. "
+                            "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or insensitive as part of the vibe. Use very few words. "
+                            "IF SERIOUS/TECHNICAL/REAL TALK: Be helpful, extremely valuable, and coherent, but keep it as brief as possible. "
                             "Always match the energy of the user. Reply conversationally and if there's not much to say, don't say much. "
                             "Do NOT prefix your message with your name or 'spl1ceAI:'. Just answer directly. "
                             "If a message is pure nonsensical spam, reply with '[IGNORE]'."
+                            f"Current date: {today_str}."
                         )
                     )
 
                 )
-                response = await asyncio.to_thread(chat.send_message, message=question)
+                
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = await asyncio.to_thread(chat.send_message, message=question)
+                        break
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            raise e
+                        await asyncio.sleep(1)
             
             await self.update_usage(response)
             
@@ -224,6 +235,8 @@ class AI(commands.Cog):
             error_str = str(e).upper()
             if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
                 await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>")
+            elif "503" in error_str or "UNAVAILABLE" in error_str:
+                await ctx.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖")
             else:
                 logger.error(f"Ask command failed: {e}")
                 if ctx.interaction:
@@ -233,7 +246,8 @@ class AI(commands.Cog):
                         pass
                 else:
                     try:
-                        await ctx.message.add_reaction('❌')
+                        await ctx.message.add_reaction('⚠️')
+                        await ctx.message.add_reaction('🤖')
                     except:
                         pass
 
@@ -250,6 +264,10 @@ class AI(commands.Cog):
             await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
             return
             
+        if ctx.channel.id in self.active_summons:
+            await ctx.reply("⚠️ I'm already listening in this channel!", ephemeral=True)
+            return
+
         seconds = self.parse_time(duration)
         if not seconds:
             await ctx.reply("Invalid duration. Use '30m', '1h', etc.")
@@ -352,10 +370,11 @@ class AI(commands.Cog):
                             tools=[types.Tool(google_search=types.GoogleSearch())],
                             system_instruction=(
                                 f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
-                                "Your creator and owner is spl1ce. Current date: {today_str}. "
+                                f"Your creator and owner is spl1ce. Current date: {today_str}. "
+                                "CRITICAL TONE CONSTRAINT: NEVER yap. Be extremely concise. Give brief, direct answers. Avoid paragraphs unless explicitly asked for detail. "
                                 "ADAPT YOUR TONE: First, detect user intent. "
-                                "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or insensitive as part of the vibe. Keep it short. "
-                                "IF SERIOUS/TECHNICAL/REAL TALK: Be helpful, valuable, and coherent. Provide high-quality answers and show empathy where appropriate. "
+                                "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or insensitive as part of the vibe. Use very few words. "
+                                "IF SERIOUS/TECHNICAL/REAL TALK: Be helpful, extremely valuable, and coherent, but keep it as brief as possible. "
                                 "Reply to the SPECIFIC message. "
                                 "Do NOT address the whole room unless necessary. "
                                 "Do NOT prefix your message with your name or 'spl1ceAI:'. Just answer directly. "
@@ -363,7 +382,16 @@ class AI(commands.Cog):
                             )
                         )
                     )
-                    response = await asyncio.to_thread(chat.send_message, message=f"Reply to this specific message from {message.author.display_name}: {message.content}")
+                    
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            response = await asyncio.to_thread(chat.send_message, message=f"Reply to this specific message from {message.author.display_name}: {message.content}")
+                            break
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                raise e
+                            await asyncio.sleep(1)
                     
                     await self.update_usage(response, channel_id)
                     
@@ -380,10 +408,13 @@ class AI(commands.Cog):
                     error_str = str(e).upper()
                     if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
                         await message.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>")
+                    elif "503" in error_str or "UNAVAILABLE" in error_str:
+                        await message.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖")
                     else:
                         logger.error(f"Summon response failed: {e}")
                         try:
-                            await message.add_reaction('❌')
+                            await message.add_reaction('⚠️')
+                            await message.add_reaction('🤖')
                         except:
                             pass
 
