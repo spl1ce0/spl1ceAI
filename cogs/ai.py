@@ -22,6 +22,20 @@ class AI(commands.Cog):
         self.active_summons = {}
         self.DAILY_TOKEN_LIMIT = 1000000
 
+    def _get_system_instruction(self):
+        today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
+        return (
+            f"You are spl1ceAI, a chill Discord bot in a group chat, interested in tech and complex problems. "
+            f"Your creator and owner is spl1ce. Current date: {today_str}. "
+            "TONE: Conversational, relaxed, and brief. Don't be a robot. "
+            "Be extremely informal. Use lowercase and minimal punctuation (like a normal Discord user). "
+            "NEVER yap. Keep answers short and direct, but keep the personality. "
+            "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or slightly toxic if that's the vibe. "
+            "IF SERIOUS/TECHNICAL: Be helpful and coherent, informative and get straight to the point. "
+            "Do NOT prefix messages with your name. "
+            "If a message is pure spam, reply with '[IGNORE]'."
+        )
+
     async def cog_load(self):
         async with self.bot.db.cursor() as cursor:
             await cursor.execute("SELECT channel_id, expiry FROM ai_summon")
@@ -190,24 +204,13 @@ class AI(commands.Cog):
                 logger.warning(f"Failed to fetch reply chain: {e}")
 
         try:
-            today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
             async with ctx.typing():
                 chat = self.client.chats.create(
                     model=self.model_name, 
                     history=history,
                     config=types.GenerateContentConfig(
                         tools=[types.Tool(google_search=types.GoogleSearch())],
-                        system_instruction=(
-                            f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
-                            "CRITICAL TONE CONSTRAINT: NEVER yap. Be extremely concise. Give brief, direct answers. Avoid paragraphs unless explicitly asked for detail. "
-                            "ADAPT YOUR TONE: First, detect user intent. "
-                            "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or insensitive as part of the vibe. Use very few words. "
-                            "IF SERIOUS/TECHNICAL/REAL TALK: Be helpful, extremely valuable, and coherent, but keep it as brief as possible. "
-                            "Always match the energy of the user. Reply conversationally and if there's not much to say, don't say much. "
-                            "Do NOT prefix your message with your name or 'spl1ceAI:'. Just answer directly. "
-                            "If a message is pure nonsensical spam, reply with '[IGNORE]'."
-                            f"Current date: {today_str}."
-                        )
+                        system_instruction=self._get_system_instruction()
                     )
 
                 )
@@ -352,7 +355,6 @@ class AI(commands.Cog):
                 
             async with message.channel.typing():
                 try:
-                    today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
                     # Fetch context (last 20 messages)
                     history_msgs = []
                     async for msg in message.channel.history(limit=25):
@@ -368,18 +370,7 @@ class AI(commands.Cog):
                         history=history_msgs,
                         config=types.GenerateContentConfig(
                             tools=[types.Tool(google_search=types.GoogleSearch())],
-                            system_instruction=(
-                                f"You are spl1ceAI, a chill Discord bot in a group chat, you're interested in tech and complex problems. "
-                                f"Your creator and owner is spl1ce. Current date: {today_str}. "
-                                "CRITICAL TONE CONSTRAINT: NEVER yap. Be extremely concise. Give brief, direct answers. Avoid paragraphs unless explicitly asked for detail. "
-                                "ADAPT YOUR TONE: First, detect user intent. "
-                                "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or insensitive as part of the vibe. Use very few words. "
-                                "IF SERIOUS/TECHNICAL/REAL TALK: Be helpful, extremely valuable, and coherent, but keep it as brief as possible. "
-                                "Reply to the SPECIFIC message. "
-                                "Do NOT address the whole room unless necessary. "
-                                "Do NOT prefix your message with your name or 'spl1ceAI:'. Just answer directly. "
-                                "If the message is pure nonsensical spam, reply with '[IGNORE]'."
-                            )
+                            system_instruction=self._get_system_instruction()
                         )
                     )
                     
