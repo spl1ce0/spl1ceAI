@@ -55,6 +55,7 @@ class AI(commands.Cog):
                     return False
         return True
 
+
     async def update_usage(self, response, channel_id=None):
         if not hasattr(response, 'usage_metadata') or not response.usage_metadata:
             return
@@ -78,6 +79,7 @@ class AI(commands.Cog):
         if channel_id and channel_id in self.active_summons:
             self.active_summons[channel_id]['tokens'] += total
 
+
     def parse_time(self, time_str):
         """Parses strings like '10m', '1h', '30s' into seconds."""
         match = re.match(r"(\d+)([smh])", time_str.lower())
@@ -89,7 +91,6 @@ class AI(commands.Cog):
         if unit == 'm': return amount * 60
         if unit == 'h': return amount * 3600
         return None
-
 
 
     @commands.hybrid_command(name="summarize")
@@ -129,7 +130,7 @@ class AI(commands.Cog):
                 await ctx.reply("No messages found to summarize.")
                 return
 
-            messages.reverse() # History is newest first
+            messages.reverse()
             
             formatted_history = []
             for m in messages:
@@ -170,10 +171,6 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def ask(self, ctx, *, question: str):
         """Asks the AI a question. Responds with context if you reply to a message."""
-        if ctx.guild.id != 1027212609608491148:
-            await ctx.reply("AI commands are only available in the test guild.", ephemeral=True)
-            return
-            
         if not await self.check_quota():
             await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
             return
@@ -186,12 +183,11 @@ class AI(commands.Cog):
             try:
                 current_msg = ctx.message
                 depth = 0
-                while current_msg.reference and depth < 5: # Limit depth to 5 for speed
+                while current_msg.reference and depth < 5:
                     ref = current_msg.reference
                     if ref.message_id:
                         msg = await ctx.channel.fetch_message(ref.message_id)
                         role = "model" if msg.author.id == self.bot.user.id else "user"
-                        # New SDK uses 'parts' with 'text' objects
                         history.insert(0, types.Content(
                             role=role, 
                             parts=[types.Part(text=f"{msg.author.display_name}: {msg.content}")]
@@ -406,6 +402,14 @@ class AI(commands.Cog):
                         try:
                             await message.add_reaction('⚠️')
                             await message.add_reaction('🤖')
+                        except:
+                            pass
+
+
+async def setup(bot):
+    await bot.add_cog(AI(bot))
+t))
+                 await message.add_reaction('🤖')
                         except:
                             pass
 
