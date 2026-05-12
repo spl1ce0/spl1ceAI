@@ -20,7 +20,7 @@ class AI(commands.Cog):
         self.client = genai.Client(api_key=api_key)
         self.model_name = 'gemini-flash-latest'
         self.active_summons = {}
-        self.DAILY_TOKEN_LIMIT = 1000000
+        self.DAILY_TOKEN_LIMIT = 100000
 
     def _get_system_instruction(self):
         today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
@@ -97,10 +97,6 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def summarize(self, ctx, limit: str):
         """Summarizes last N messages or M minutes. Example: !summarize 50 or !summarize 10m"""
-        if ctx.guild.id != 1027212609608491148:
-            await ctx.reply("AI commands are only available in the test guild.", ephemeral=True)
-            return
-        
         if not await self.check_quota():
             await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
             return
@@ -255,10 +251,6 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def summon(self, ctx, duration: str = "10m"):
         """Summons the AI to listen and respond in this channel for a duration (e.g. 5m, 1h)."""
-        if ctx.guild.id != 1027212609608491148:
-            await ctx.reply("AI commands are only available in the test guild.", ephemeral=True)
-            return
-            
         if not await self.check_quota():
             await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
             return
@@ -402,14 +394,6 @@ class AI(commands.Cog):
                         try:
                             await message.add_reaction('⚠️')
                             await message.add_reaction('🤖')
-                        except:
-                            pass
-
-
-async def setup(bot):
-    await bot.add_cog(AI(bot))
-t))
-                 await message.add_reaction('🤖')
                         except:
                             pass
 
