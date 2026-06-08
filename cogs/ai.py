@@ -13,6 +13,13 @@ import typing
 
 logger = logging.getLogger(__name__)
 
+
+ERROR_QUOTA_REACHED = "⚠️ Daily AI token quota reached! Please try again tomorrow."
+ERROR_BUSY_OR_LIMIT = "⏳ Gemini is busy or rate-limited! Please try again in a moment."
+ERROR_SAFETY_BLOCKED = "🛡️ Response blocked by Gemini safety filters."
+ERROR_UNEXPECTED = "❌ An unexpected error occurred while processing your request."
+ERROR_IMAGE_GEN_FAILED = "*(⚠️ Failed to generate image)*"
+
 class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -24,6 +31,20 @@ class AI(commands.Cog):
         self.model_name = 'gemini-flash-latest'
         self.active_summons = {}
         self.DAILY_TOKEN_LIMIT = 100000
+        self.warning_counters = {}
+
+
+    def _should_send_warning(self, channel_id: int, warning_type: str, interval: int = 10) -> bool:
+        channel_data = self.warning_counters.setdefault(channel_id, {'quota': 0, 'busy': 0})
+        count = channel_data[warning_type]
+        
+        # Increment failure counter
+        channel_data[warning_type] += 1
+        
+        # Warn on the 1st failure (count == 0) and then every X failures
+        if count == 0 or (count % interval == 0):
+            return True
+        return False
 
 
     def _get_system_instructions(self):
@@ -76,9 +97,9 @@ class AI(commands.Cog):
             except Exception as e:
                 logger.error(f"Image generation failed: {e}")
                 if clean_text:
-                    clean_text += "\n\n*(⚠️ Failed to generate image)*"
+                    clean_text += f"\n\n{ERROR_IMAGE_GEN_FAILED}"
                 else:
-                    clean_text = "*(⚠️ Failed to generate image)*"
+                    clean_text = ERROR_IMAGE_GEN_FAILED
                 
         return clean_text, file
 
@@ -235,7 +256,7 @@ class AI(commands.Cog):
     async def summarize(self, ctx, limit: int):
         """Summarizes last N messages."""
         if not await self.check_quota():
-            await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
+            await ctx.reply(ERROR_QUOTA_REACHED, ephemeral=True)
             return
             
         await ctx.defer(ephemeral=True)
@@ -261,13 +282,13 @@ class AI(commands.Cog):
 
         except Exception as e:
             error_str = str(e).upper()
-            if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>", ephemeral=True)
+            if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
+                await ctx.reply(ERROR_BUSY_OR_LIMIT, ephemeral=True)
             else:
                 logger.error(f"Summarize failed: {e}")
                 if ctx.interaction:
                     try:
-                        await ctx.interaction.followup.send("⚠️ An error occurred while processing your request.", ephemeral=True)
+                        await ctx.interaction.followup.send(ERROR_UNEXPECTED, ephemeral=True)
                     except:
                         pass
                 else:
@@ -282,7 +303,7 @@ class AI(commands.Cog):
     async def ask(self, ctx, question: str, image: typing.Optional[discord.Attachment] = None):
         """Asks the AI a question. Optionally attach an image."""
         if not await self.check_quota():
-            await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
+            await ctx.reply(ERROR_QUOTA_REACHED, ephemeral=True)
             return
             
         await ctx.defer()
@@ -328,7 +349,7 @@ class AI(commands.Cog):
             await self.update_usage(response)
 
             if not response.text:
-                await ctx.reply("⚠️ Gemini returned an empty response.")
+                await ctx.reply(ERROR_SAFETY_BLOCKED)
                 return
 
             clean_text, file = await self._handle_potential_image_generation(response.text)
@@ -344,15 +365,13 @@ class AI(commands.Cog):
 
         except Exception as e:
             error_str = str(e).upper()
-            if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>", ephemeral=True)
-            elif "503" in error_str or "UNAVAILABLE" in error_str:
-                await ctx.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖", ephemeral=True)
+            if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
+                await ctx.reply(ERROR_BUSY_OR_LIMIT, ephemeral=True)
             else:
                 logger.exception("Ask command failed")
                 if ctx.interaction:
                     try:
-                        await ctx.interaction.followup.send("⚠️ An error occurred while processing your request.", ephemeral=True)
+                        await ctx.interaction.followup.send(ERROR_UNEXPECTED, ephemeral=True)
                     except:
                         pass
                 else:
@@ -368,7 +387,7 @@ class AI(commands.Cog):
     async def summon(self, ctx, duration: str = "10m"):
         """Summons the AI to listen and respond in this channel for a duration (e.g. 5m, 1h)."""
         if not await self.check_quota():
-            await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
+            await ctx.reply(ERROR_QUOTA_REACHED, ephemeral=True)
             return
             
         if ctx.channel.id in self.active_summons:
@@ -457,11 +476,21 @@ class AI(commands.Cog):
         if not is_mentioned and not is_reply_to_bot:
             return
 
-        if not await self.check_quota():
-            try:
-                await message.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
-            except:
-                pass
+        quota_ok = await self.check_quota()
+        if quota_ok:
+            if channel_id in self.warning_counters:
+                self.warning_counters[channel_id]['quota'] = 0
+        else:
+            if self._should_send_warning(channel_id, 'quota', interval=10):
+                try:
+                    await message.reply(ERROR_QUOTA_REACHED)
+                except:
+                    pass
+            else:
+                try:
+                    await message.add_reaction('🚫')
+                except:
+                    pass
             return
             
 
@@ -514,9 +543,12 @@ class AI(commands.Cog):
                         await asyncio.sleep(1)
                 
                 await self.update_usage(response, channel_id)
+                # Success! Reset the busy warning counter
+                if channel_id in self.warning_counters:
+                    self.warning_counters[channel_id]['busy'] = 0
                 
                 if not response.text:
-                    await message.reply("⚠️ I couldn't generate a response (it may have been blocked by safety filters).")
+                    await message.reply(ERROR_SAFETY_BLOCKED)
                     return
                 
                 if "[IGNORE]" in response.text:
@@ -534,10 +566,17 @@ class AI(commands.Cog):
                         await message.reply(clean_text)
             except Exception as e:
                 error_str = str(e).upper()
-                if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                    await message.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>", ephemeral=True)
-                elif "503" in error_str or "UNAVAILABLE" in error_str:
-                    await message.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖", ephemeral=True)
+                if any(code in error_str for code in ["RESOURCE_EXHAUSTED", "429", "503", "UNAVAILABLE"]):
+                    if self._should_send_warning(channel_id, 'busy', interval=10):
+                        try:
+                            await message.reply(ERROR_BUSY_OR_LIMIT)
+                        except:
+                            pass
+                    else:
+                        try:
+                            await message.add_reaction('⏳')
+                        except:
+                            pass
                 else:
                     logger.exception("Summon response failed")
                     try:
