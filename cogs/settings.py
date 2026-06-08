@@ -1,0 +1,270 @@
+import discord
+from discord import ui
+from discord.ext import commands
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class PrefixModal(ui.Modal, title="Change Server Prefix"):
+    prefix_input = ui.TextInput(
+        label="New Command Prefix",
+        placeholder="Enter prefix (e.g. !, ?, =)",
+        default="=",
+        max_length=10,
+        required=True
+    )
+
+    def __init__(self, prefix, guild_id, view):
+        super().__init__()
+        self.prefix_input.default = prefix
+        self.guild_id = guild_id
+        self.view = view
+
+
+    async def on_submit(self, interaction: discord.Interaction):
+        new_prefix = self.prefix_input.value
+        
+        # Save prefix to database
+        async with self.view.bot.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?) "
+                "ON CONFLICT(guild_id) DO UPDATE SET prefix = excluded.prefix",
+                (self.guild_id, new_prefix)
+            )
+            await self.view.bot.db.commit()
+
+        self.view.guild_settings = self.view.bot.settings_cache[self.guild_id]
+            
+        self.view.bot.settings_cache[self.guild_id]["prefix"] = new_prefix
+        
+        self.view._main_menu_view()
+        await interaction.response.edit_message(view=self.view)
+
+
+
+
+class CBCSelect(ui.Select):
+    PAGE_SIZE = 23
+
+    def __init__(self, guild, bot, selected_id=None, page=0):
+        self.bot = bot
+        self.guild = guild
+        self.page = page
+        self.selected_id = None
+        if selected_id:
+            self.selected_id = int(selected_id)
+            
+        self.channels = [c for c in guild.channels if isinstance(c, discord.TextChannel)]
+
+        options, placeholder = self._make_options()
+
+        super().__init__(placeholder=placeholder, options=options, min_values=1, max_values=1)
+
+    def _make_options(self):
+        total_channels = len(self.channels)
+        page_start = self.page * self.PAGE_SIZE
+        page_end = page_start + self.PAGE_SIZE
+        page_channels = self.channels[page_start:page_end]
+
+        options = []
+        if page_start > 0:
+            options.append(discord.SelectOption(label="◀ Previous Page", value="__prev__"))
+
+        for ch in page_channels:
+            options.append(discord.SelectOption(label="# " + ch.name, value=str(ch.id)))
+
+        if page_end < total_channels:
+            options.append(discord.SelectOption(label="Next Page ▶", value="__next__"))
+
+        placeholder = "Select a channel..."
+        if self.selected_id:
+            selected_channel = self.guild.get_channel(self.selected_id)
+            if selected_channel is not None:
+                placeholder = "#" + selected_channel.name
+
+        return options, placeholder
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            value = self.values[0]
+        except:
+            value = None
+
+        if value in ("__prev__", "__next__"):
+            if value == "__prev__" and self.page > 0:
+                self.page -= 1
+            elif value == "__next__":
+                total = len(self.channels)
+                if (self.page + 1) * self.PAGE_SIZE < total:
+                    self.page += 1
+
+            new_options, new_placeholder = self._make_options()
+            self.options = new_options
+            self.placeholder = new_placeholder
+            try:
+                await interaction.response.edit_message(view=self.view)
+            except Exception:
+                await interaction.response.defer()
+            return
+
+        try:
+            selected = int(value)
+        except Exception:
+            await interaction.response.defer()
+            return
+
+        # UPDATE DATABASE
+        async with self.bot.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT INTO guild_settings (guild_id, cbc) VALUES (?, ?) "
+                "ON CONFLICT(guild_id) DO UPDATE SET cbc = excluded.cbc",
+                (self.guild.id, selected)
+            )
+            await self.bot.db.commit()
+
+        # UPDATE CACHE
+        self.bot.settings_cache.get(self.guild.id, {})["cbc"] = selected
+        self.selected_id = selected
+        self.options, self.placeholder = self._make_options()
+        try:
+            await interaction.response.edit_message(view=self.view)
+        except Exception:
+            await interaction.response.defer()
+
+        
+
+
+class SettingsContainer(ui.Container):
+    ICON = "⚙️"
+
+    def __init__(self, guild_settings, guild, bot):
+        super().__init__()
+        self.guild_settings = guild_settings
+        self.guild = guild
+        self.bot = bot
+        self._make_container()
+
+
+    def _make_container(self):
+        ################
+        # TITLE DISPLAY
+        titleString = f"## {self.ICON} Server Settings"
+        titleDisplay = ui.TextDisplay(titleString)
+        self.add_item(titleDisplay)
+        ################
+
+        self.add_item(ui.Separator())
+
+        ################
+        # PREFIX SECTION
+        prefix = self.guild_settings["prefix"]
+        prefix_display = ui.TextDisplay(f"**Command Prefix:** `{prefix}`\n")
+        prefix_button = ui.Button(label="edit", style=discord.ButtonStyle.gray)
+        prefix_button.callback = self.prefix_change
+        prefix_section = ui.Section(prefix_display, accessory=prefix_button)
+        self.add_item(prefix_section)
+        ################
+
+        self.add_item(ui.Separator())
+
+        ################
+        # CHATBOT CHANNEL SECTION
+        cbc = self.guild_settings.get("cbc") if self.guild_settings else None
+        cbc_state = "off" if cbc is None else "on"
+        style=discord.ButtonStyle.gray
+        cbc_textdisplay = ui.TextDisplay(f"**Chat Bot Channel**")
+        cbc_button = ui.Button(label=cbc_state, style=style)
+        cbc_button.callback = self.cbc_toggle
+        cbc_section = ui.Section(cbc_textdisplay, accessory=cbc_button)
+        self.add_item(cbc_section)
+        ################
+
+        ################
+        # CHATBOT CHANNEL SELECT (paginated inside select)
+        if cbc is not None:
+            cbc_select = CBCSelect(guild=self.guild, bot=self.bot, selected_id=cbc)
+            cbc_actionrow = ui.ActionRow()
+            cbc_actionrow.add_item(cbc_select)
+            self.add_item(cbc_actionrow)
+        ################
+
+
+    async def prefix_change(self, interaction: discord.Interaction):
+        prefix = self.guild_settings["prefix"]
+        await interaction.response.send_modal(PrefixModal(prefix, self.guild.id, self.view))
+
+
+    async def cbc_toggle(self, interaction: discord.Interaction):
+        current_cbc = self.guild_settings.get("cbc") if self.guild_settings else None
+
+        if current_cbc is None:
+            default = None
+            for ch in self.guild.channels:
+                if isinstance(ch, discord.TextChannel):
+                    default = ch.id
+                    break
+                
+            if default is None:
+                await interaction.response.send_message("No text channel available to enable chat-bot channel.", ephemeral=True)
+                return
+            new_cbc = default
+        else:
+            new_cbc = None
+
+        # UPDATE DATABASE
+        async with self.bot.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT INTO guild_settings (guild_id, cbc) VALUES (?, ?) "
+                "ON CONFLICT(guild_id) DO UPDATE SET cbc = excluded.cbc",
+                (self.guild.id, new_cbc)
+            )
+            await self.bot.db.commit()
+
+        # UPDATE CACHE
+        self.bot.settings_cache.setdefault(self.guild.id, {})["cbc"] = new_cbc
+        if self.guild_settings is not None:
+            self.guild_settings["cbc"] = new_cbc
+
+        view = self.view
+        view._main_menu_view()
+
+        await interaction.response.edit_message(view=view)
+        
+
+
+class SettingsView(ui.LayoutView):
+
+    def __init__(self, guild_settings, guild, bot, *, timeout = 180):
+        super().__init__(timeout=timeout)
+        self.guild_settings = guild_settings
+        self.guild = guild
+        self.bot = bot
+        self._main_menu_view()
+
+
+    def _main_menu_view(self):
+        menu_container = SettingsContainer(self.guild_settings, self.guild, self.bot)
+
+        self.clear_items()
+        self.add_item(menu_container)
+
+
+
+
+class Settings(commands.Cog):
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    @commands.hybrid_command(name="settings", aliases=["config"])
+    @commands.guild_only()
+    @commands.has_permissions(administrator=True)
+    async def settings(self, ctx):
+        """Opens the guild settings configuration dashboard."""
+        view = SettingsView(self.bot.settings_cache.get(ctx.guild.id), ctx.guild, self.bot)
+        await ctx.reply(view=view)
+
+
+async def setup(bot):
+    await bot.add_cog(Settings(bot))
