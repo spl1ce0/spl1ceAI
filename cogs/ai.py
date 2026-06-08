@@ -535,9 +535,9 @@ class AI(commands.Cog):
             except Exception as e:
                 error_str = str(e).upper()
                 if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                    await message.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>")
+                    await message.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>", ephemeral=True)
                 elif "503" in error_str or "UNAVAILABLE" in error_str:
-                    await message.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖")
+                    await message.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖", ephemeral=True)
                 else:
                     logger.exception("Summon response failed")
                     try:
