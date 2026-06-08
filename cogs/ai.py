@@ -7,6 +7,9 @@ import asyncio
 import logging
 import datetime
 import re
+import io
+import PIL.Image
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +37,45 @@ class AI(commands.Cog):
             "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or slightly toxic if that's the vibe. "
             "IF SERIOUS/TECHNICAL: Be helpful and coherent, informative and get straight to the point. "
             "Do NOT prefix messages with your name. "
-            "If a message is pure spam, reply with '[IGNORE]'."
+            "If a message is pure spam or you think it doesn't need a reply, reply with '[IGNORE]'. "
+            "IMAGE GENERATION: If the user asks you to draw/show/generate an image, or if you feel it's a perfect context to show an image, you can generate one by appending `[GENERATE_IMAGE: <detailed prompt>]` to the end of your message. "
+            "Write the image prompt in English, describing the scene with rich detail (styles, subjects, lighting, etc.) so it looks great. Avoid using text inside the generated image."
         )
+
+
+    async def _handle_potential_image_generation(self, response_text: str):
+        # We look for "[GENERATE_IMAGE: <prompt>]"
+        pattern = r"\[GENERATE_IMAGE:\s*(.*?)\]"
+        match = re.search(pattern, response_text, re.IGNORECASE | re.DOTALL)
+        
+        file = None
+        clean_text = response_text
+        
+        if match:
+            image_prompt = match.group(1).strip()
+            # Remove the tag from the text
+            clean_text = re.sub(pattern, "", response_text, flags=re.IGNORECASE | re.DOTALL).strip()
+            
+            try:
+                logger.info(f"Generating image for prompt: {image_prompt}")
+                image_response = await asyncio.to_thread(
+                    self.client.models.generate_images,
+                    model='imagen-4.0-generate-001',
+                    prompt=image_prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        output_mime_type='image/jpeg'
+                    )
+                )
+                
+                if image_response and image_response.generated_images:
+                    img_bytes = image_response.generated_images[0].image.image_bytes
+                    file = discord.File(io.BytesIO(img_bytes), filename="generated_image.jpg")
+            except Exception as e:
+                logger.error(f"Image generation failed: {e}")
+                clean_text += "\n\n*(⚠️ Failed to generate image)*"
+                
+        return clean_text, file
 
 
     async def cog_load(self):
@@ -109,25 +149,50 @@ class AI(commands.Cog):
     
 
     def _format_messages(self, message_list: list) -> str:
-
         result = ""
-
         for message in message_list:
             sender = message.author
-            content = message.content
-            if message.reference != None:
+            content = message.content or ""
+            
+            # Check attachments
+            attachments_str = ""
+            if message.attachments:
+                att_types = []
+                for att in message.attachments:
+                    if self._is_image(att):
+                        att_types.append("[Image]")
+                    else:
+                        att_types.append(f"[{att.filename}]")
+                attachments_str = " " + " ".join(att_types)
+
+            if message.reference is not None:
                 ref_message = message.reference.resolved
                 if ref_message is not None and not isinstance(ref_message, discord.DeletedReferencedMessage): 
                     ref_author = ref_message.author 
-                    ref_content = ref_message.content or "[Attachment/Embed]"
-                    if len(ref_content) > 100:                                                                                                  
-                        ref_content = ref_content[:97] + "..."                                                                                  
-                    result += f"> [{ref_author}]: \"{ref_content}\"\n"    
-            result += f"[{sender}]: {content}\n"
+                    ref_content = ref_message.content or ""
+                    
+                    # Check reference attachments
+                    ref_attachments_str = ""
+                    if ref_message.attachments:
+                        ref_att_types = []
+                        for att in ref_message.attachments:
+                            if self._is_image(att):
+                                ref_att_types.append("[Image]")
+                            else:
+                                ref_att_types.append(f"[{att.filename}]")
+                        ref_attachments_str = " " + " ".join(ref_att_types)
+                        
+                    ref_text = (ref_content + ref_attachments_str).strip() or "[Attachment/Embed]"
+                    if len(ref_text) > 100:                                                                                                  
+                        ref_text = ref_text[:97] + "..."                                                                                  
+                    result += f"> [{ref_author}]: \"{ref_text}\"\n"    
+            
+            msg_text = (content + attachments_str).strip()
+            result += f"[{sender}]: {msg_text}\n"
         return result
 
 
-    async def _get_llm_request(self, prompt: str, tools: list = None):
+    async def _get_llm_request(self, contents: typing.Union[str, list], tools: list = None):
         config = types.GenerateContentConfig(
             system_instruction=self._get_system_instructions(),
             tools=tools
@@ -135,10 +200,29 @@ class AI(commands.Cog):
         response = await asyncio.to_thread(
             self.client.models.generate_content,
             model=self.model_name,
-            contents=prompt,
+            contents=contents,
             config=config
         )
         return response
+
+
+    def _is_image(self, attachment):
+        if attachment.content_type:
+            return attachment.content_type.startswith("image/")
+        filename = attachment.filename.lower()
+        return filename.endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.bmp'))
+
+    def _get_mime_type(self, attachment):
+        if attachment.content_type:
+            return attachment.content_type
+        filename = attachment.filename.lower()
+        if filename.endswith('.png'): return 'image/png'
+        if filename.endswith(('.jpg', '.jpeg')): return 'image/jpeg'
+        if filename.endswith('.webp'): return 'image/webp'
+        if filename.endswith('.gif'): return 'image/gif'
+        if filename.endswith('.heic'): return 'image/heic'
+        if filename.endswith('.bmp'): return 'image/bmp'
+        return 'image/jpeg'
 
 
     @commands.hybrid_command(name="summarize", aliases=["tldr", "aint_readin_allat"])
@@ -190,38 +274,68 @@ class AI(commands.Cog):
 
     @commands.hybrid_command(name="ask", aliases=["llm", "ai"])
     @commands.guild_only()
-    async def ask(self, ctx, *, question: str):
-        """Asks the AI a question. Responds with context if you reply to a message."""
+    async def ask(self, ctx, question: str, image: typing.Optional[discord.Attachment] = None):
+        """Asks the AI a question. Optionally attach an image."""
         if not await self.check_quota():
             await ctx.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
             return
             
         await ctx.defer()
 
-        message_list = await self._get_chat_history(ctx, ctx.channel.id, 50)
+        contents = []
+        if image:
+            if self._is_image(image):
+                try:
+                    img_bytes = await image.read()
+                    contents.append(types.Part.from_bytes(data=img_bytes, mime_type=self._get_mime_type(image)))
+                except Exception as e:
+                    await ctx.reply(f"⚠️ Failed to process attachment image: {e}", ephemeral=True)
+                    return
+            else:
+                await ctx.reply("⚠️ Attached file is not an image.", ephemeral=True)
+                return
+
+        # Check if replying to a message with an image
+        if ctx.message and ctx.message.reference and ctx.message.reference.message_id:
+            try:
+                ref_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                for attachment in ref_msg.attachments:
+                    if self._is_image(attachment):
+                        img_bytes = await attachment.read()
+                        contents.append(types.Part.from_bytes(data=img_bytes, mime_type=self._get_mime_type(attachment)))
+            except:
+                pass
+
+        message_list = await self._get_chat_history(ctx, ctx.channel.id, 20)
         message_list.reverse()
         formatted_context = self._format_messages(message_list)
         prompt = f"Here's the chat:\n{formatted_context}\n\nReply to the user's question: {question}"
+        contents.append(prompt)
+
+        logger.info(f"ask command trigger: contents contains {len(contents)} items (images: {len(contents) - 1})")
 
         try:
             async with ctx.typing():
                 response = await self._get_llm_request(
-                    prompt, 
+                    contents, 
                     tools=[types.Tool(google_search=types.GoogleSearch())]
-                    )
+                )
             await self.update_usage(response)
 
             if not response.text:
                 await ctx.reply("⚠️ Gemini returned an empty response.")
                 return
 
-            if len(response.text) > 2000:
-                parts = [response.text[i:i+1900] for i in range(0, len(response.text), 1900)]
-                for part in parts:
-                    await ctx.send(part)
+            clean_text, file = await self._handle_potential_image_generation(response.text)
+            if file:
+                await ctx.reply(clean_text, file=file)
             else:
-                await ctx.reply(response.text)
-
+                if len(clean_text) > 2000:
+                    parts = [clean_text[i:i+1900] for i in range(0, len(clean_text), 1900)]
+                    for part in parts:
+                        await ctx.send(part)
+                else:
+                    await ctx.reply(clean_text)
 
         except Exception as e:
             error_str = str(e).upper()
@@ -230,7 +344,7 @@ class AI(commands.Cog):
             elif "503" in error_str or "UNAVAILABLE" in error_str:
                 await ctx.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖")
             else:
-                logger.error(f"Ask command failed: {e}")
+                logger.exception("Ask command failed")
                 if ctx.interaction:
                     try:
                         await ctx.interaction.followup.send("⚠️ An error occurred while processing your request.", ephemeral=True)
@@ -305,7 +419,7 @@ class AI(commands.Cog):
         guild_id = message.guild.id if message.guild else None
         
         is_summoned = channel_id in self.active_summons
-        is_chatbot_channel = guild_id and self.bot.settings_cache.get(guild_id).get("cbc") == channel_id
+        is_chatbot_channel = guild_id and self.bot.settings_cache.get(guild_id, {}).get("cbc") == channel_id
         
         if not is_summoned and not is_chatbot_channel:
             return
@@ -355,15 +469,39 @@ class AI(commands.Cog):
                 
                 formatted_context = self._format_messages(message_list)
 
+                contents = []
+                # Check for images in the current message
+                for attachment in message.attachments:
+                    if self._is_image(attachment):
+                        try:
+                            img_bytes = await attachment.read()
+                            contents.append(types.Part.from_bytes(data=img_bytes, mime_type=self._get_mime_type(attachment)))
+                        except Exception as e:
+                            logger.error(f"Failed to read message attachment image: {e}")
+
+                # Check if replying to a message with images
+                if message.reference and message.reference.message_id:
+                    try:
+                        ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                        for attachment in ref_msg.attachments:
+                            if self._is_image(attachment):
+                                img_bytes = await attachment.read()
+                                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=self._get_mime_type(attachment)))
+                    except Exception as e:
+                        logger.error(f"Failed to read reply referenced image: {e}")
+
                 prompt = f"Recent Chat:\n{formatted_context}\n\nReply to this message from {message.author.display_name}: {message.content}"
+                contents.append(prompt)
+
+                logger.info(f"on_message trigger: contents contains {len(contents)} items (images: {len(contents) - 1})")
 
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
                         response = await self._get_llm_request(
-                            prompt,
+                            contents,
                             tools=[types.Tool(google_search=types.GoogleSearch())]
-    				    )
+                        )
                         break
                     except Exception as e:
                         if attempt == max_retries - 1:
@@ -379,12 +517,16 @@ class AI(commands.Cog):
                 if "[IGNORE]" in response.text:
                     return
 
-                if len(response.text) > 2000:
-                    parts = [response.text[i:i+1900] for i in range(0, len(response.text), 1900)]
-                    for part in parts:
-                        await message.channel.send(part)
+                clean_text, file = await self._handle_potential_image_generation(response.text)
+                if file:
+                    await message.reply(clean_text, file=file)
                 else:
-                    await message.reply(response.text)
+                    if len(clean_text) > 2000:
+                        parts = [clean_text[i:i+1900] for i in range(0, len(clean_text), 1900)]
+                        for part in parts:
+                            await message.channel.send(part)
+                    else:
+                        await message.reply(clean_text)
             except Exception as e:
                 error_str = str(e).upper()
                 if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
@@ -392,7 +534,7 @@ class AI(commands.Cog):
                 elif "503" in error_str or "UNAVAILABLE" in error_str:
                     await message.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖")
                 else:
-                    logger.error(f"Summon response failed: {e}")
+                    logger.exception("Summon response failed")
                     try:
                         await message.add_reaction('⚠️')
                         await message.add_reaction('🤖')
