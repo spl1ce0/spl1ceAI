@@ -158,7 +158,7 @@ class SettingsContainer(ui.Container):
 
         ################
         # PREFIX SECTION
-        prefix = self.guild_settings["prefix"]
+        prefix = self.guild_settings.get("prefix", "!")
         prefix_display = ui.TextDisplay(f"**Command Prefix:** `{prefix}`\n")
         prefix_button = ui.Button(label="edit", style=discord.ButtonStyle.gray)
         prefix_button.callback = self.prefix_change
@@ -191,7 +191,7 @@ class SettingsContainer(ui.Container):
 
 
     async def prefix_change(self, interaction: discord.Interaction):
-        prefix = self.guild_settings["prefix"]
+        prefix = self.guild_settings.get("prefix", "!")
         await interaction.response.send_modal(PrefixModal(prefix, self.guild.id, self.view))
 
 
@@ -204,7 +204,7 @@ class SettingsContainer(ui.Container):
                 if isinstance(ch, discord.TextChannel):
                     default = ch.id
                     break
-                
+
             if default is None:
                 await interaction.response.send_message("No text channel available to enable chat-bot channel.", ephemeral=True)
                 return
