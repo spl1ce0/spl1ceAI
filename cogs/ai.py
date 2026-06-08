@@ -55,6 +55,8 @@ class AI(commands.Cog):
             image_prompt = match.group(1).strip()
             # Remove the tag from the text
             clean_text = re.sub(pattern, "", response_text, flags=re.IGNORECASE | re.DOTALL).strip()
+            if not clean_text:
+                clean_text = None
             
             try:
                 logger.info(f"Generating image for prompt: {image_prompt}")
@@ -73,7 +75,10 @@ class AI(commands.Cog):
                     file = discord.File(io.BytesIO(img_bytes), filename="generated_image.jpg")
             except Exception as e:
                 logger.error(f"Image generation failed: {e}")
-                clean_text += "\n\n*(⚠️ Failed to generate image)*"
+                if clean_text:
+                    clean_text += "\n\n*(⚠️ Failed to generate image)*"
+                else:
+                    clean_text = "*(⚠️ Failed to generate image)*"
                 
         return clean_text, file
 
@@ -136,7 +141,7 @@ class AI(commands.Cog):
         return None
     
 
-    async def _get_chat_history(self, ctx: discord.Context, channel_id: int, message_count: int) -> list:
+    async def _get_chat_history(self, ctx: commands.Context, channel_id: int, message_count: int) -> list:
         message_list = []
         channel = await commands.TextChannelConverter().convert(ctx, str(channel_id))
         try:
