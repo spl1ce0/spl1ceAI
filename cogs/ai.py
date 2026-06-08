@@ -14,10 +14,10 @@ import typing
 logger = logging.getLogger(__name__)
 
 
-ERROR_QUOTA_REACHED = "⚠️ Daily AI token quota reached! Please try again tomorrow."
-ERROR_BUSY_OR_LIMIT = "⏳ Gemini is busy or rate-limited! Please try again in a moment."
+ERROR_QUOTA_REACHED = "<:sAI_frown:1513642744394944722> Daily AI token quota reached! Please try again tomorrow."
+ERROR_BUSY_OR_LIMIT = "<:sAI_high_demand:1513623669308657766> Gemini is busy or rate-limited! Please try again in a moment."
 ERROR_SAFETY_BLOCKED = "🛡️ Response blocked by Gemini safety filters."
-ERROR_UNEXPECTED = "❌ An unexpected error occurred while processing your request."
+ERROR_UNEXPECTED = "⚠️ An unexpected error occurred while processing your request."
 ERROR_IMAGE_GEN_FAILED = "*(⚠️ Failed to generate image)*"
 
 class AI(commands.Cog):
@@ -488,7 +488,7 @@ class AI(commands.Cog):
                     pass
             else:
                 try:
-                    await message.add_reaction('🚫')
+                    await message.add_reaction('<:sAI_hand_limit:1513659143456559235>')
                 except:
                     pass
             return

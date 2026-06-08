@@ -80,7 +80,7 @@ class CBCSelect(ui.Select):
         if self.selected_id:
             selected_channel = self.guild.get_channel(self.selected_id)
             if selected_channel is not None:
-                placeholder = "#" + selected_channel.name
+                placeholder = "# " + selected_channel.name
 
         return options, placeholder
 
