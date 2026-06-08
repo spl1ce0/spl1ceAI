@@ -31,7 +31,6 @@ class Spl1ceAI(commands.AutoShardedBot):
         self,
         *args,
         initial_extensions: List[str],
-        # db_pool: asyncpg.Pool,
         web_client: ClientSession,
         testing_guild_id: Optional[int] = None,
         **kwargs,
@@ -42,7 +41,6 @@ class Spl1ceAI(commands.AutoShardedBot):
             *args, 
             **kwargs
         )
-        # self.db_pool = db_pool
         self.web_client = web_client
         self.testing_guild_id = testing_guild_id
         self.initial_extensions = initial_extensions
@@ -109,6 +107,7 @@ class Spl1ceAI(commands.AutoShardedBot):
             except Exception as e:
                 log.error(f"Failed to react to restart message: {e}")
 
+
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
         async with self.db.cursor() as cursor:
@@ -121,6 +120,7 @@ class Spl1ceAI(commands.AutoShardedBot):
                     )
                     self.settings_cache[guild.id] = {"prefix": "!", "cbc": None}
             await self.db.commit()
+
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         log.info(f"Joined new guild: {guild.name} ({guild.id})")
