@@ -117,9 +117,9 @@ class Spl1ceAI(commands.AutoShardedBot):
                     log.info(f"Initializing default settings for guild: {guild.name} ({guild.id})")
                     await cursor.execute(
                         "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc) VALUES (?, ?, ?)",
-                        (guild.id, "=", None)
+                        (guild.id, "!", None)
                     )
-                    self.settings_cache[guild.id] = {"prefix": "=", "cbc": None}
+                    self.settings_cache[guild.id] = {"prefix": "!", "cbc": None}
             await self.db.commit()
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
@@ -127,10 +127,10 @@ class Spl1ceAI(commands.AutoShardedBot):
         async with self.db.cursor() as cursor:
             await cursor.execute(
                 "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc) VALUES (?, ?, ?)",
-                (guild.id, "=", None)
+                (guild.id, "!", None)
             )
             await self.db.commit()
-        self.settings_cache[guild.id] = {"prefix": "=", "cbc": None}
+        self.settings_cache[guild.id] = {"prefix": "!", "cbc": None}
 
     async def close(self) -> None:
         if self.db:
