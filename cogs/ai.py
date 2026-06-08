@@ -262,7 +262,7 @@ class AI(commands.Cog):
         except Exception as e:
             error_str = str(e).upper()
             if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>")
+                await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>", ephemeral=True)
             else:
                 logger.error(f"Summarize failed: {e}")
                 if ctx.interaction:
@@ -345,9 +345,9 @@ class AI(commands.Cog):
         except Exception as e:
             error_str = str(e).upper()
             if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>")
+                await ctx.reply("⚠️ I'm being rate-limited! Please try again in a bit. <:CC_yellow_look:1440119405991166186>", ephemeral=True)
             elif "503" in error_str or "UNAVAILABLE" in error_str:
-                await ctx.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖")
+                await ctx.reply("⚠️ High demand spike! Gemini is currently busy. Please try again in a moment. 🤖", ephemeral=True)
             else:
                 logger.exception("Ask command failed")
                 if ctx.interaction:
@@ -459,7 +459,7 @@ class AI(commands.Cog):
 
         if not await self.check_quota():
             try:
-                await message.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.")
+                await message.reply("⚠️ Daily AI token quota reached! Please try again tomorrow.", ephemeral=True)
             except:
                 pass
             return
