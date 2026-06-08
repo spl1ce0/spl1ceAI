@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 async def get_prefix(bot, message):
         if not message.guild:
-            return commands.when_mentioned_or("=")(bot, message)
+            return commands.when_mentioned_or("!")(bot, message)
         
         custom_prefix = bot.settings_cache.get(message.guild.id, {}).get("prefix", "=")
         return commands.when_mentioned_or(custom_prefix)(bot, message)
