@@ -173,7 +173,7 @@ async def main():
         # intents
         intents = discord.Intents.default()
         intents.message_content = True
-        exts = ["cogs.games", "cogs.dev", "cogs.troll", "cogs.fun", "cogs.ai", "cogs.settings"]
+        exts = ["cogs.games", "cogs.dev", "cogs.fun", "cogs.ai", "cogs.settings"]
 
         async with Spl1ceAI(
             # db_pool=pool,
