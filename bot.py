@@ -109,6 +109,29 @@ class Spl1ceAI(commands.AutoShardedBot):
             except Exception as e:
                 log.error(f"Failed to react to restart message: {e}")
 
+    async def on_ready(self) -> None:
+        log.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        async with self.db.cursor() as cursor:
+            for guild in self.guilds:
+                if guild.id not in self.settings_cache:
+                    log.info(f"Initializing default settings for guild: {guild.name} ({guild.id})")
+                    await cursor.execute(
+                        "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc) VALUES (?, ?, ?)",
+                        (guild.id, "=", None)
+                    )
+                    self.settings_cache[guild.id] = {"prefix": "=", "cbc": None}
+            await self.db.commit()
+
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        log.info(f"Joined new guild: {guild.name} ({guild.id})")
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc) VALUES (?, ?, ?)",
+                (guild.id, "=", None)
+            )
+            await self.db.commit()
+        self.settings_cache[guild.id] = {"prefix": "=", "cbc": None}
+
     async def close(self) -> None:
         if self.db:
             await self.db.close()

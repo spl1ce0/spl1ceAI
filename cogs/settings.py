@@ -34,9 +34,8 @@ class PrefixModal(ui.Modal, title="Change Server Prefix"):
             )
             await self.view.bot.db.commit()
 
+        self.view.bot.settings_cache.setdefault(self.guild_id, {"prefix": "=", "cbc": None})["prefix"] = new_prefix
         self.view.guild_settings = self.view.bot.settings_cache[self.guild_id]
-            
-        self.view.bot.settings_cache[self.guild_id]["prefix"] = new_prefix
         
         self.view._main_menu_view()
         await interaction.response.edit_message(view=self.view)
@@ -123,8 +122,7 @@ class CBCSelect(ui.Select):
             )
             await self.bot.db.commit()
 
-        # UPDATE CACHE
-        self.bot.settings_cache.get(self.guild.id, {})["cbc"] = selected
+        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": "=", "cbc": None})["cbc"] = selected
         self.selected_id = selected
         self.options, self.placeholder = self._make_options()
         try:
@@ -221,8 +219,7 @@ class SettingsContainer(ui.Container):
             )
             await self.bot.db.commit()
 
-        # UPDATE CACHE
-        self.bot.settings_cache.setdefault(self.guild.id, {})["cbc"] = new_cbc
+        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": "=", "cbc": None})["cbc"] = new_cbc
         if self.guild_settings is not None:
             self.guild_settings["cbc"] = new_cbc
 
@@ -261,8 +258,10 @@ class Settings(commands.Cog):
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def settings(self, ctx):
-        """Opens the guild settings configuration dashboard."""
-        view = SettingsView(self.bot.settings_cache.get(ctx.guild.id), ctx.guild, self.bot)
+        guild_id = ctx.guild.id
+        if guild_id not in self.bot.settings_cache:
+            self.bot.settings_cache[guild_id] = {"prefix": "=", "cbc": None}
+        view = SettingsView(self.bot.settings_cache[guild_id], ctx.guild, self.bot)
         await ctx.reply(view=view)
 
 
