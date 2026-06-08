@@ -38,7 +38,8 @@ class FakeBanContainer(ui.Container):
 class Fun(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.collection_url = "https://www.tiktok.com/@lukysgaming/collection/seelion-7603137602169932566"
+        self.sealion_collection_url = "https://www.tiktok.com/@lukysgaming/collection/seelion-7603137602169932566"
+        self.anoomals_collection_url = "https://www.tiktok.com/@lukysgaming/collection/anoomols-7629020086997371670"
         self.common_ydl_opts = {
             'no_warnings': True,
             'quiet': True,
@@ -49,9 +50,7 @@ class Fun(commands.Cog):
             }
         }
 
-    @commands.hybrid_command(name="sealion")
-    async def sealion(self, ctx):
-        """Sends a random sealion video from lukysgaming's collection!"""
+    async def _send_random_tiktok(self, ctx, collection_url: str, command_name: str, emoji: str):
         await ctx.defer()
         
         typing_context = ctx.typing() if ctx.interaction is None else asyncio.Lock()
@@ -59,19 +58,18 @@ class Fun(commands.Cog):
         async with typing_context:
             try:
                 ydl_opts_info = {
-                **self.common_ydl_opts,
-                'extract_flat': True,
+                    **self.common_ydl_opts,
+                    'extract_flat': True,
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                    info = await asyncio.to_thread(ydl.extract_info, self.collection_url, download=False)
+                    info = await asyncio.to_thread(ydl.extract_info, collection_url, download=False)
                     
                 if 'entries' not in info:
                     return await ctx.reply("Could not find any videos in the collection! 😢")
                 
                 urls = [entry.get('url') or f"https://www.tiktok.com/video/{entry['id']}" for entry in info['entries']]
                 random.shuffle(urls)
-
 
                 MAX_ATTEMPTS = min(len(urls), 3)
                 last_error = ""
@@ -141,8 +139,28 @@ class Fun(commands.Cog):
                 await ctx.reply(f"All {MAX_ATTEMPTS} attempts failed. Last error: `{last_error}`")
                         
             except Exception as e:
-                logger.error(f"Sealion command failed: {e}")
-                await ctx.reply(f"Something went wrong while fetching the sealion! 🦭\n`{e}`")
+                logger.error(f"{command_name.capitalize()} command failed: {e}")
+                await ctx.reply(f"Something went wrong while fetching the {command_name}! {emoji}\n`{e}`")
+
+    @commands.hybrid_command(name="sealion")
+    async def sealion(self, ctx):
+        """Sends a random sealion video from lukysgaming's collection!"""
+        await self._send_random_tiktok(
+            ctx, 
+            self.sealion_collection_url, 
+            command_name="sealion", 
+            emoji="🦭"
+        )
+
+    @commands.hybrid_command(name="anoomals", aliases=["anoomols"])
+    async def anoomals(self, ctx):
+        """Sends a random anoomals video from lukysgaming's collection!"""
+        await self._send_random_tiktok(
+            ctx, 
+            self.anoomals_collection_url, 
+            command_name="anoomals", 
+            emoji="🐾"
+        )
 
 
     
