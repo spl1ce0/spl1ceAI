@@ -573,7 +573,7 @@ class CFEndContainer(ui.Container):
 
 
 
-class CFView(discord.ui.LayoutView):
+class CFView(ui.LayoutView):
     CF_EMOJI = "<:sAI_C4L:1462459349137096775>"
     
 

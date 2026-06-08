@@ -6,8 +6,6 @@ import random
 import logging
 import tempfile
 import os
-import json
-import time
 
 logger = logging.getLogger(__name__)
 

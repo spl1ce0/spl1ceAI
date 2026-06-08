@@ -19,6 +19,13 @@ TEST_GUILD_ID = 1027212609608491148
 log = logging.getLogger(__name__)
 
 
+async def get_prefix(bot, message):
+        if not message.guild:
+            return commands.when_mentioned_or("=")(bot, message)
+        
+        custom_prefix = bot.settings_cache.get(message.guild.id, {}).get("prefix", "=")
+        return commands.when_mentioned_or(custom_prefix)(bot, message)
+
 class Spl1ceAI(commands.AutoShardedBot):
     def __init__(
         self,
@@ -31,13 +38,16 @@ class Spl1ceAI(commands.AutoShardedBot):
     ):
 
         super().__init__(
-            command_prefix=commands.when_mentioned_or("!"), *args, **kwargs
+            command_prefix=get_prefix,
+            *args, 
+            **kwargs
         )
         # self.db_pool = db_pool
         self.web_client = web_client
         self.testing_guild_id = testing_guild_id
         self.initial_extensions = initial_extensions
         self.db: asqlite.Connection = None
+        self.settings_cache = {}
 
     async def setup_hook(self) -> None:
         self.db = await asqlite.connect("bot.db")
@@ -52,6 +62,9 @@ class Spl1ceAI(commands.AutoShardedBot):
             await cursor.execute(
                 "CREATE TABLE IF NOT EXISTS ai_usage (day TEXT PRIMARY KEY, request_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0)"
             )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS guild_settings ( guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER)"
+            )
             await self.db.commit()
 
         async with self.db.cursor() as cursor:
@@ -64,9 +77,16 @@ class Spl1ceAI(commands.AutoShardedBot):
                 await cursor.execute("DELETE FROM system_state WHERE key = 'restart_info'")
                 await self.db.commit()
 
+
+            await cursor.execute("SELECT guild_id, prefix, cbc FROM guild_settings")
+            rows = await cursor.fetchall()
+            for row in rows:
+                self.settings_cache[row[0]] = {"prefix": row[1], "cbc": row[2]}
+
         for extension in self.initial_extensions:
             log.info(f"Extension {extension} loaded")
             await self.load_extension(extension)
+        
 
     async def handle_restart_reaction(self, data):
         """Re-fetches the restart message once the bot is ready to react and report time."""
@@ -100,7 +120,7 @@ class Spl1ceAI(commands.AutoShardedBot):
             log.error("DISCORD_TOKEN not found in environment variables.")
             return
         await super().start(token, reconnect=True)
-
+        
 
 async def main():
     
@@ -130,7 +150,7 @@ async def main():
         # intents
         intents = discord.Intents.default()
         intents.message_content = True
-        exts = ["cogs.games", "cogs.dev", "cogs.troll", "cogs.fun", "cogs.ai"]
+        exts = ["cogs.games", "cogs.dev", "cogs.troll", "cogs.fun", "cogs.ai", "cogs.settings"]
 
         async with Spl1ceAI(
             # db_pool=pool,
