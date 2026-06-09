@@ -28,7 +28,7 @@ class AI(commands.Cog):
             logger.error("GEMINI_API_KEY not found in environment variables.")
         
         self.client = genai.Client(api_key=api_key)
-        self.model_name = 'gemini-flash-latest'
+        self.model_name = 'gemini-3.1-flash-lite'
         self.active_summons = {}
         self.DAILY_TOKEN_LIMIT = 100000
         self.warning_counters = {}
