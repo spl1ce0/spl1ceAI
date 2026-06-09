@@ -59,7 +59,7 @@ class AI(commands.Cog):
             "IF SERIOUS/TECHNICAL: Be helpful and coherent, informative and get straight to the point. "
             "Do NOT prefix messages with your name. "
             "If a message is pure spam or you think it doesn't need a reply, reply with '[IGNORE]'. "
-            "IMAGE GENERATION: If the user asks you to draw/show/generate an image, or if you feel it's a perfect context to show an image, you can generate one by appending `[GENERATE_IMAGE: <detailed prompt>]` to the end of your message. "
+            "IMAGE GENERATION: If the user asks you to draw/show/generate an image, you can generate one by appending `[GENERATE_IMAGE: <detailed prompt>]` to the end of your message. "
             "Write the image prompt in English, describing the scene with rich detail (styles, subjects, lighting, etc.) so it looks great. Avoid using text inside the generated image."
         )
 
