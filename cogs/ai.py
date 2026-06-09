@@ -497,7 +497,7 @@ class AI(commands.Cog):
         async with message.channel.typing():
             try:
                 ctx = await self.bot.get_context(message)
-                message_list = await self._get_chat_history(ctx, message.channel.id, 40)
+                message_list = await self._get_chat_history(ctx, message.channel.id, 30)
                 message_list = [msg for msg in message_list if msg.id != message.id]
                 message_list.reverse()
                 
