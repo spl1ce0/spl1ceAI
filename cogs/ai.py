@@ -30,7 +30,7 @@ class AI(commands.Cog):
         self.client = genai.Client(api_key=api_key)
         self.model_name = 'gemini-flash-lite-latest'
         self.active_summons = {}
-        self.DAILY_TOKEN_LIMIT = 100000
+        self.DAILY_TOKEN_LIMIT = 1000000
         self.warning_counters = {}
 
 
