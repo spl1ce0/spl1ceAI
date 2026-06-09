@@ -574,7 +574,7 @@ class AI(commands.Cog):
                             pass
                     else:
                         try:
-                            await message.add_reaction('⏳')
+                            await message.add_reaction('<:sAI_high_demand:1513623669308657766>')
                         except:
                             pass
                 else:
