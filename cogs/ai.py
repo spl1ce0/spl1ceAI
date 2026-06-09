@@ -436,8 +436,9 @@ class AI(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot:
-            return
+        
+        #if message.author.bot:
+        #    return
 
         channel_id = message.channel.id
         guild_id = message.guild.id if message.guild else None
