@@ -41,7 +41,7 @@ class AI(commands.Cog):
     OPENAI_MODEL = "gpt-5.4-mini"
     ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
     DEEPSEEK_MODEL = "deepseek-chat"
-    GROK_MODEL = "grok-2"
+    GROK_MODEL = "grok-4.3"
 
     # System Instruction Templates
     SYSTEM_INSTRUCTIONS_BASE = (
