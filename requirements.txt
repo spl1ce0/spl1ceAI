@@ -16,3 +16,6 @@ yt-dlp
 google-genai
 python-dotenv
 Pillow
+openai
+anthropic
+xai-sdk

@@ -61,9 +61,38 @@ class Spl1ceAI(commands.AutoShardedBot):
                 "CREATE TABLE IF NOT EXISTS ai_usage (day TEXT PRIMARY KEY, request_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0)"
             )
             await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS guild_settings ( guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER)"
+                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'openai', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15)"
             )
             await self.db.commit()
+
+        async with self.db.cursor() as cursor:
+            await cursor.execute("PRAGMA table_info(guild_settings)")
+            columns = [row[1] for row in await cursor.fetchall()]
+            
+            migrated = False
+            if "llm_primary" not in columns:
+                log.info("Migration: Adding llm_primary column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_primary TEXT NOT NULL DEFAULT 'gemini'")
+                migrated = True
+            if "llm_backup1" not in columns:
+                log.info("Migration: Adding llm_backup1 column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_backup1 TEXT NOT NULL DEFAULT 'openai'")
+                migrated = True
+            if "llm_backup2" not in columns:
+                log.info("Migration: Adding llm_backup2 column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_backup2 TEXT NOT NULL DEFAULT 'anthropic'")
+                migrated = True
+            if "llm_backup3" not in columns:
+                log.info("Migration: Adding llm_backup3 column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_backup3 TEXT NOT NULL DEFAULT 'deepseek'")
+                migrated = True
+            if "llm_timeout" not in columns:
+                log.info("Migration: Adding llm_timeout column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_timeout INTEGER NOT NULL DEFAULT 15")
+                migrated = True
+                
+            if migrated:
+                await self.db.commit()
 
         async with self.db.cursor() as cursor:
             await cursor.execute("SELECT value FROM system_state WHERE key = 'restart_info'")
@@ -76,10 +105,18 @@ class Spl1ceAI(commands.AutoShardedBot):
                 await self.db.commit()
 
 
-            await cursor.execute("SELECT guild_id, prefix, cbc FROM guild_settings")
+            await cursor.execute("SELECT guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout FROM guild_settings")
             rows = await cursor.fetchall()
             for row in rows:
-                self.settings_cache[row[0]] = {"prefix": row[1], "cbc": row[2]}
+                self.settings_cache[row[0]] = {
+                    "prefix": row[1],
+                    "cbc": row[2],
+                    "llm_primary": row[3],
+                    "llm_backup1": row[4],
+                    "llm_backup2": row[5],
+                    "llm_backup3": row[6],
+                    "llm_timeout": row[7]
+                }
 
         for extension in self.initial_extensions:
             log.info(f"Extension {extension} loaded")
@@ -115,10 +152,18 @@ class Spl1ceAI(commands.AutoShardedBot):
                 if guild.id not in self.settings_cache:
                     log.info(f"Initializing default settings for guild: {guild.name} ({guild.id})")
                     await cursor.execute(
-                        "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc) VALUES (?, ?, ?)",
-                        (guild.id, "!", None)
+                        "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (guild.id, "!", None, "gemini", "openai", "anthropic", "deepseek", 15)
                     )
-                    self.settings_cache[guild.id] = {"prefix": "!", "cbc": None}
+                    self.settings_cache[guild.id] = {
+                        "prefix": "!",
+                        "cbc": None,
+                        "llm_primary": "gemini",
+                        "llm_backup1": "openai",
+                        "llm_backup2": "anthropic",
+                        "llm_backup3": "deepseek",
+                        "llm_timeout": 15
+                    }
             await self.db.commit()
 
 
@@ -126,11 +171,19 @@ class Spl1ceAI(commands.AutoShardedBot):
         log.info(f"Joined new guild: {guild.name} ({guild.id})")
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc) VALUES (?, ?, ?)",
-                (guild.id, "!", None)
+                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (guild.id, "!", None, "gemini", "openai", "anthropic", "deepseek", 15)
             )
             await self.db.commit()
-        self.settings_cache[guild.id] = {"prefix": "!", "cbc": None}
+        self.settings_cache[guild.id] = {
+            "prefix": "!",
+            "cbc": None,
+            "llm_primary": "gemini",
+            "llm_backup1": "openai",
+            "llm_backup2": "anthropic",
+            "llm_backup3": "deepseek",
+            "llm_timeout": 15
+        }
 
     async def close(self) -> None:
         if self.db:

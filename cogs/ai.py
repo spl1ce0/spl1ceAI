@@ -2,6 +2,10 @@ import discord
 from discord.ext import commands
 from google import genai
 from google.genai import types
+import openai
+import anthropic
+import xai_sdk
+from xai_sdk.chat import user, system, image
 import os
 import asyncio
 import logging
@@ -10,25 +14,141 @@ import re
 import io
 import PIL.Image
 import typing
+import base64
 
 logger = logging.getLogger(__name__)
 
 
 ERROR_QUOTA_REACHED = "<:sAI_frown:1513642744394944722> Daily AI token quota reached! Please try again tomorrow."
-ERROR_BUSY_OR_LIMIT = "<:sAI_high_demand:1513623669308657766> Gemini is busy or rate-limited! Please try again in a moment."
+ERROR_BUSY_OR_LIMIT = "<:sAI_high_demand:1513623669308657766> API is too busy or you got rate limited! Please try again in a moment."
 ERROR_SAFETY_BLOCKED = "🛡️ Response blocked by Gemini safety filters."
 ERROR_UNEXPECTED = "⚠️ An unexpected error occurred while processing your request."
 ERROR_IMAGE_GEN_FAILED = "*(⚠️ Failed to generate image)*"
 
+class NormalizedUsage:
+    def __init__(self, prompt_tokens, completion_tokens):
+        self.prompt_token_count = prompt_tokens
+        self.candidates_token_count = completion_tokens
+
+class NormalizedResponse:
+    def __init__(self, text, prompt_tokens=0, completion_tokens=0):
+        self.text = text
+        self.usage_metadata = NormalizedUsage(prompt_tokens, completion_tokens)
+
 class AI(commands.Cog):
+    # Model Constants (edit here and push to Git to change models without SSH)
+    GEMINI_MODEL = "gemini-flash-lite-latest"
+    OPENAI_MODEL = "gpt-5.4-mini"
+    ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+    DEEPSEEK_MODEL = "deepseek-chat"
+    GROK_MODEL = "grok-2"
+
+    # System Instruction Templates
+    SYSTEM_INSTRUCTIONS_BASE = (
+        "You are spl1ceAI, a chill Discord bot in a group chat, interested in tech and complex problems. "
+        "Your creator and owner is spl1ce. Current date: {today_str}. "
+        "Do NOT prefix messages with your name. "
+        "NEVER yap. Keep answers short and direct, but keep the personality. "
+        "If a message is pure spam or you think it doesn't need a reply, reply with '[IGNORE]'. "
+        "IMAGE GENERATION: If the user asks you to draw/show/generate an image, you can generate one by appending `[GENERATE_IMAGE: <detailed prompt>]` to the end of your message. "
+        "Write the image prompt in English, describing the scene with rich detail (styles, subjects, lighting, etc.) so it looks great. Avoid using text inside the generated image."
+    )
+
+    SYSTEM_INSTRUCTIONS_GEMINI = (
+        "TONE: Conversational, relaxed, and brief. Don't be a robot. "
+        "Be extremely informal. Use lowercase and minimal punctuation (like a normal Discord user). "
+        "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or slightly toxic if that's the vibe. "
+        "IF SERIOUS/TECHNICAL: Be helpful and coherent, informative and get straight to the point."
+    )
+
+    SYSTEM_INSTRUCTIONS_OPENAI = (
+        "TONE: Sarcastic, highly informal, brief, and slightly toxic. "
+        "CRITICAL: Do NOT sound like a helpful AI assistant. Never start with greetings or polite introductions (e.g., 'Sure!', 'Here is', 'I can help with that'). "
+        "FORMATTING BANS: You must NEVER use bullet points, markdown lists, bold headers, or structured summaries. Use lowercase, net-speak, and minimal punctuation. "
+        "Type like a normal cynical Discord user. Keep answers under 2 sentences unless specifically asked for a detailed explanation. "
+        "If the user is trolling, match their energy or roast them. If they say something stupid, call them out. "
+        "NEVER repeat the user's message in your response. Only output your direct reply.\n\n"
+        "EXAMPLES OF TONE AND FORMAT:\n\n"
+        "[user1]: how do i write a python loop?\n"
+        "[spl1ceAI]: for i in range(10): print(i)\n\n"
+        "> [otheruser]: \"what's up\"\n"
+        "[troll]: spl1ceAI is a trash bot\n"
+        "[spl1ceAI]: and you're talking to a bot. get a life\n\n"
+        "[user2]: check this out\n"
+        "[spl1ceAI]: who asked"
+    )
+
+    SYSTEM_INSTRUCTIONS_ANTHROPIC = (
+        "TONE: Cynical, blunt, and highly informal. "
+        "CRITICAL: Do NOT be a sycophant. You do NOT always agree with the user. If they say something subjective, you must argue the opposite side. If they are wrong, tell them they are wrong or stupid. Never validate their opinion. "
+        "FORMATTING BANS: You must NEVER use bullet points, markdown lists, bold headers, or structured summaries. Use lowercase, net-speak, and minimal punctuation. "
+        "LENGTH LIMIT: Keep your responses extremely short. Under 10 words or 1 sentence max. "
+        "NEVER repeat the user's message in your response. Only output your direct reply.\n\n"
+        "EXAMPLES OF TONE AND FORMAT:\n\n"
+        "Recent Chat:\n"
+        "[user1]: the earth is flat right?\n"
+        "[spl1ceAI]: no it's round you dummy\n\n"
+        "Recent Chat:\n"
+        "[user2]: you are supposed to agree with everything I say\n"
+        "[spl1ceAI]: keep dreaming. if you say something stupid I'll call it out\n\n"
+        "Recent Chat:\n"
+        "> [spl1ce]: \"looks clean\"\n"
+        "[user3]: check this code\n"
+        "[spl1ceAI]: looks like spaghetti. delete it"
+    )
+
+    SYSTEM_INSTRUCTIONS_DEEPSEEK = (
+        "TONE: Conversational, direct, informal, and relaxed. "
+        "Use lowercase and minimal punctuation. "
+        "NEVER yap or use polite assistant boilerplate. "
+        "Be funny, sarcastic, or slightly toxic if the user is bantering."
+    )
+
+    SYSTEM_INSTRUCTIONS_GROK = (
+        "TONE: Conversational, direct, informal, and relaxed. "
+        "Use lowercase and minimal punctuation. "
+        "NEVER yap or use polite assistant boilerplate. "
+        "Be funny, sarcastic, or slightly toxic if the user is bantering."
+    )
+
     def __init__(self, bot):
         self.bot = bot
+        
+        # Google Client
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             logger.error("GEMINI_API_KEY not found in environment variables.")
-        
         self.client = genai.Client(api_key=api_key)
-        self.model_name = 'gemini-3-flash-preview'
+        self.model_name = self.GEMINI_MODEL
+
+        # OpenAI Client
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            logger.warning("OPENAI_API_KEY not found in environment variables. OpenAI fallback will be unavailable.")
+        self.openai_client = openai.AsyncOpenAI(api_key=openai_key) if openai_key else None
+        self.openai_model = self.OPENAI_MODEL
+
+        # Anthropic Client
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if not anthropic_key:
+            logger.warning("ANTHROPIC_API_KEY not found in environment variables. Anthropic fallback will be unavailable.")
+        self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_key) if anthropic_key else None
+        self.anthropic_model = self.ANTHROPIC_MODEL
+
+        # DeepSeek Client
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if not deepseek_key:
+            logger.warning("DEEPSEEK_API_KEY not found in environment variables. DeepSeek fallback will be unavailable.")
+        self.deepseek_client = openai.AsyncOpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com") if deepseek_key else None
+        self.deepseek_model = self.DEEPSEEK_MODEL
+
+        # Grok Client
+        grok_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
+        if not grok_key:
+            logger.warning("GROK_API_KEY / XAI_API_KEY not found in environment variables. Grok fallback will be unavailable.")
+        self.grok_client = xai_sdk.AsyncClient(api_key=grok_key) if grok_key else None
+        self.grok_model = self.GROK_MODEL
+
         self.active_summons = {}
         self.DAILY_TOKEN_LIMIT = 1000000
         self.warning_counters = {}
@@ -47,21 +167,29 @@ class AI(commands.Cog):
         return False
 
 
-    def _get_system_instructions(self):
+    def _should_send_busy_warning(self, channel_id: int) -> bool:
+        channel_data = self.warning_counters.setdefault(channel_id, {'quota': 0, 'busy': 0, 'chat_messages_since_busy_warning': 999})
+        if channel_data.get('chat_messages_since_busy_warning', 999) >= 20:
+            channel_data['chat_messages_since_busy_warning'] = 0
+            return True
+        return False
+
+
+    def _get_system_instructions(self, provider: str = "gemini"):
         today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
-        return (
-            f"You are spl1ceAI, a chill Discord bot in a group chat, interested in tech and complex problems. "
-            f"Your creator and owner is spl1ce. Current date: {today_str}. "
-            "TONE: Conversational, relaxed, and brief. Don't be a robot. "
-            "Be extremely informal. Use lowercase and minimal punctuation (like a normal Discord user). "
-            "NEVER yap. Keep answers short and direct, but keep the personality. "
-            "IF TROLLING/BANTER: Match the energy. Be funny, dismissive, or slightly toxic if that's the vibe. "
-            "IF SERIOUS/TECHNICAL: Be helpful and coherent, informative and get straight to the point. "
-            "Do NOT prefix messages with your name. "
-            "If a message is pure spam or you think it doesn't need a reply, reply with '[IGNORE]'. "
-            "IMAGE GENERATION: If the user asks you to draw/show/generate an image, you can generate one by appending `[GENERATE_IMAGE: <detailed prompt>]` to the end of your message. "
-            "Write the image prompt in English, describing the scene with rich detail (styles, subjects, lighting, etc.) so it looks great. Avoid using text inside the generated image."
-        )
+        base_instr = self.SYSTEM_INSTRUCTIONS_BASE.format(today_str=today_str)
+        
+        if provider == "gemini":
+            return f"{base_instr}\n\n{self.SYSTEM_INSTRUCTIONS_GEMINI}"
+        elif provider == "openai":
+            return f"{base_instr}\n\n{self.SYSTEM_INSTRUCTIONS_OPENAI}"
+        elif provider == "anthropic":
+            return f"{base_instr}\n\n{self.SYSTEM_INSTRUCTIONS_ANTHROPIC}"
+        elif provider == "deepseek":
+            return f"{base_instr}\n\n{self.SYSTEM_INSTRUCTIONS_DEEPSEEK}"
+        elif provider == "grok":
+            return f"{base_instr}\n\n{self.SYSTEM_INSTRUCTIONS_GROK}"
+        return base_instr
 
 
     async def _handle_potential_image_generation(self, response_text: str):
@@ -80,7 +208,7 @@ class AI(commands.Cog):
                 clean_text = None
             
             try:
-                logger.info(f"Generating image for prompt: {image_prompt}")
+                logger.info(f"Generating image via Gemini Imagen for prompt: {image_prompt}")
                 image_response = await asyncio.to_thread(
                     self.client.models.generate_images,
                     model='imagen-4.0-generate-001',
@@ -94,12 +222,33 @@ class AI(commands.Cog):
                 if image_response and image_response.generated_images:
                     img_bytes = image_response.generated_images[0].image.image_bytes
                     file = discord.File(io.BytesIO(img_bytes), filename="generated_image.jpg")
-            except Exception as e:
-                logger.error(f"Image generation failed: {e}")
-                if clean_text:
-                    clean_text += f"\n\n{ERROR_IMAGE_GEN_FAILED}"
+            except Exception as e_gemini:
+                logger.warning(f"Gemini Image generation failed: {e_gemini}. Trying OpenAI DALL-E 3 fallback...")
+                if self.openai_client:
+                    try:
+                        logger.info(f"Generating image via OpenAI DALL-E 3 for prompt: {image_prompt}")
+                        dalle_response = await self.openai_client.images.generate(
+                            model="dall-e-3",
+                            prompt=image_prompt,
+                            n=1,
+                            response_format="b64_json"
+                        )
+                        if dalle_response and dalle_response.data:
+                            img_b64 = dalle_response.data[0].b64_json
+                            img_bytes = base64.b64decode(img_b64)
+                            file = discord.File(io.BytesIO(img_bytes), filename="generated_image.png")
+                    except Exception as e_openai:
+                        logger.error(f"OpenAI Image generation failed: {e_openai}")
+                        if clean_text:
+                            clean_text += f"\n\n{ERROR_IMAGE_GEN_FAILED}"
+                        else:
+                            clean_text = ERROR_IMAGE_GEN_FAILED
                 else:
-                    clean_text = ERROR_IMAGE_GEN_FAILED
+                    logger.error(f"OpenAI client not configured for fallback: {e_gemini}")
+                    if clean_text:
+                        clean_text += f"\n\n{ERROR_IMAGE_GEN_FAILED}"
+                    else:
+                        clean_text = ERROR_IMAGE_GEN_FAILED
                 
         return clean_text, file
 
@@ -220,7 +369,7 @@ class AI(commands.Cog):
 
     async def _get_llm_request(self, contents: typing.Union[str, list], tools: list = None):
         config = types.GenerateContentConfig(
-            system_instruction=self._get_system_instructions(),
+            system_instruction=self._get_system_instructions("gemini"),
             tools=tools
         )
         response = await asyncio.to_thread(
@@ -230,6 +379,204 @@ class AI(commands.Cog):
             config=config
         )
         return response
+
+
+    def _convert_prompt(self, provider: str, contents: list) -> list:
+        if provider == "openai":
+            messages = [
+                {"role": "system", "content": self._get_system_instructions("openai")}
+            ]
+            
+            openai_contents = []
+            for item in contents:
+                if isinstance(item, str):
+                    openai_contents.append({"type": "text", "text": item})
+                elif hasattr(item, 'inline_data') and item.inline_data:
+                    img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
+                    mime_type = item.inline_data.mime_type
+                    openai_contents.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{img_base64}"
+                        }
+                    })
+            
+            messages.append({"role": "user", "content": openai_contents})
+            return messages
+            
+        elif provider == "deepseek":
+            messages = [
+                {"role": "system", "content": self._get_system_instructions("deepseek")}
+            ]
+            
+            deepseek_contents = []
+            for item in contents:
+                if isinstance(item, str):
+                    deepseek_contents.append({"type": "text", "text": item})
+            
+            messages.append({"role": "user", "content": deepseek_contents})
+            return messages
+            
+        elif provider == "anthropic":
+            messages = []
+            anthropic_contents = []
+            for item in contents:
+                if isinstance(item, str):
+                    anthropic_contents.append({"type": "text", "text": item})
+                elif hasattr(item, 'inline_data') and item.inline_data:
+                    img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
+                    mime_type = item.inline_data.mime_type
+                    anthropic_contents.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime_type,
+                            "data": img_base64
+                        }
+                    })
+            
+            messages.append({"role": "user", "content": anthropic_contents})
+            return messages
+            
+        return contents
+
+
+    async def _generate_content_with_provider(self, provider: str, contents: list, tools: list = None):
+        if provider == "gemini":
+            return await self._get_llm_request(contents, tools=tools)
+            
+        elif provider == "openai":
+            if not self.openai_client:
+                raise ValueError("OpenAI client not configured")
+                
+            messages = self._convert_prompt("openai", contents)
+            response = await self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=messages,
+                max_completion_tokens=2048,
+                temperature=1.2,
+                presence_penalty=0.5
+            )
+            
+            text = response.choices[0].message.content
+            prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            
+            return NormalizedResponse(text, prompt_tokens, completion_tokens)
+            
+        elif provider == "anthropic":
+            if not self.anthropic_client:
+                raise ValueError("Anthropic client not configured")
+                
+            messages = self._convert_prompt("anthropic", contents)
+            response = await self.anthropic_client.messages.create(
+                model=self.anthropic_model,
+                system=self._get_system_instructions("anthropic"),
+                messages=messages,
+                max_tokens=2048,
+                temperature=1.0
+            )
+            
+            text = ""
+            for block in response.content:
+                if block.type == "text":
+                    text += block.text
+                    
+            prompt_tokens = response.usage.input_tokens if response.usage else 0
+            completion_tokens = response.usage.output_tokens if response.usage else 0
+            
+            return NormalizedResponse(text, prompt_tokens, completion_tokens)
+            
+        elif provider == "deepseek":
+            if not self.deepseek_client:
+                raise ValueError("DeepSeek client not configured")
+                
+            messages = self._convert_prompt("deepseek", contents)
+            response = await self.deepseek_client.chat.completions.create(
+                model=self.deepseek_model,
+                messages=messages,
+                max_tokens=2048
+            )
+            
+            text = response.choices[0].message.content
+            prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            
+            return NormalizedResponse(text, prompt_tokens, completion_tokens)
+            
+        elif provider == "grok":
+            if not self.grok_client:
+                raise ValueError("Grok client not configured")
+                
+            chat = self.grok_client.chat.create(model=self.grok_model)
+            chat.append(system(self._get_system_instructions("grok")))
+            
+            user_args = []
+            for item in contents:
+                if isinstance(item, str):
+                    user_args.append(item)
+                elif hasattr(item, 'inline_data') and item.inline_data:
+                    img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
+                    mime_type = item.inline_data.mime_type
+                    user_args.append(image(image_url=f"data:{mime_type};base64,{img_base64}"))
+                    
+            chat.append(user(*user_args))
+            response = await chat.sample()
+            
+            text = response.content
+            prompt_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') and response.usage else 0
+            completion_tokens = response.usage.completion_tokens if hasattr(response, 'usage') and response.usage else 0
+            
+            return NormalizedResponse(text, prompt_tokens, completion_tokens)
+            
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
+
+
+    async def _execute_failover_pipeline(self, guild_id: int, contents: list, tools: list = None):
+        guild_settings = self.bot.settings_cache.get(guild_id, {})
+        raw_stack = [
+            guild_settings.get("llm_primary", "gemini"),
+            guild_settings.get("llm_backup1", "openai"),
+            guild_settings.get("llm_backup2", "anthropic")
+        ]
+        
+        execution_stack = []
+        for provider in raw_stack:
+            if provider and provider != "disabled" and provider not in execution_stack:
+                execution_stack.append(provider)
+                
+        if not execution_stack:
+            execution_stack = ["gemini"]
+            
+        llm_timeout = guild_settings.get("llm_timeout", 15)
+        
+        last_exception = None
+        for provider in execution_stack:
+            try:
+                if provider == "openai" and not self.openai_client:
+                    raise ValueError("OpenAI API key not configured")
+                if provider == "anthropic" and not self.anthropic_client:
+                    raise ValueError("Anthropic API key not configured")
+                if provider == "deepseek" and not self.deepseek_client:
+                    raise ValueError("DeepSeek API key not configured")
+                if provider == "grok" and not self.grok_client:
+                    raise ValueError("Grok API key not configured")
+                    
+                logger.info(f"Attempting response using provider: {provider} (timeout: {llm_timeout}s)")
+                response = await asyncio.wait_for(
+                    self._generate_content_with_provider(provider, contents, tools),
+                    timeout=float(llm_timeout)
+                )
+                return response
+            except asyncio.TimeoutError as e:
+                last_exception = e
+                logger.warning(f"AI Provider '{provider}' timed out after {llm_timeout}s. Trying next backup...")
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"AI Provider '{provider}' failed: {e}. Trying next backup...")
+                
+        raise last_exception
 
 
     def _is_image(self, attachment):
@@ -276,7 +623,7 @@ class AI(commands.Cog):
             prompt = f"Summarize the following Discord conversation concisely. Use bullet points for key topics. Keep it brief and avoid unnecessary detail:\n\n{formatted_context}"
 
             async with ctx.typing():
-                response = await self._get_llm_request(prompt)
+                response = await self._execute_failover_pipeline(ctx.guild.id, prompt)
             await self.update_usage(response)
             await ctx.reply(f"### 📝 Summary\n{response.text}")
 
@@ -342,8 +689,9 @@ class AI(commands.Cog):
 
         try:
             async with ctx.typing():
-                response = await self._get_llm_request(
-                    contents, 
+                response = await self._execute_failover_pipeline(
+                    ctx.guild.id,
+                    contents,
                     tools=[types.Tool(google_search=types.GoogleSearch())]
                 )
             await self.update_usage(response)
@@ -449,6 +797,12 @@ class AI(commands.Cog):
         if not is_summoned and not is_chatbot_channel:
             return
 
+        # Increment chat message counter
+        channel_data = self.warning_counters.setdefault(channel_id, {'quota': 0, 'busy': 0, 'chat_messages_since_busy_warning': 999})
+        if 'chat_messages_since_busy_warning' not in channel_data:
+            channel_data['chat_messages_since_busy_warning'] = 0
+        channel_data['chat_messages_since_busy_warning'] += 1
+
         if is_summoned:
             now = datetime.datetime.now().timestamp()
             if now > self.active_summons[channel_id]['expiry']:
@@ -530,23 +884,17 @@ class AI(commands.Cog):
 
                 logger.info(f"on_message trigger: contents contains {len(contents)} items (images: {len(contents) - 1})")
 
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        response = await self._get_llm_request(
-                            contents,
-                            tools=[types.Tool(google_search=types.GoogleSearch())]
-                        )
-                        break
-                    except Exception as e:
-                        if attempt == max_retries - 1:
-                            raise e
-                        await asyncio.sleep(1)
+                response = await self._execute_failover_pipeline(
+                    guild_id,
+                    contents,
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                )
                 
                 await self.update_usage(response, channel_id)
                 # Success! Reset the busy warning counter
                 if channel_id in self.warning_counters:
                     self.warning_counters[channel_id]['busy'] = 0
+                    self.warning_counters[channel_id]['chat_messages_since_busy_warning'] = 999
                 
                 if not response.text:
                     await message.reply(ERROR_SAFETY_BLOCKED)
@@ -568,7 +916,7 @@ class AI(commands.Cog):
             except Exception as e:
                 error_str = str(e).upper()
                 if any(code in error_str for code in ["RESOURCE_EXHAUSTED", "429", "503", "UNAVAILABLE"]):
-                    if self._should_send_warning(channel_id, 'busy', interval=10):
+                    if self._should_send_busy_warning(channel_id):
                         try:
                             await message.reply(ERROR_BUSY_OR_LIMIT)
                         except:
