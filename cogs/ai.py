@@ -901,6 +901,7 @@ class AI(commands.Cog):
                     return
                 
                 if "[IGNORE]" in response.text:
+                    logger.info(f"Ignored message from {message.author} (ID: {message.author.id}) in channel {message.channel} (ID: {message.channel.id}) because model returned [IGNORE]")
                     return
 
                 clean_text, file = await self._handle_potential_image_generation(response.text)

@@ -6,6 +6,10 @@ import random
 import logging
 import tempfile
 import os
+import io
+import re
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 from discord import ui
 from discord.ext.commands import MemberConverter
 
@@ -180,6 +184,207 @@ class Fun(commands.Cog):
         view.add_item(ban_container)
 
         await ctx.reply(view=view)
+
+    async def _fetch_target_message(self, ctx, query: str = None) -> discord.Message:
+        if not query:
+            if ctx.message.reference and ctx.message.reference.message_id:
+                return await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            raise commands.BadArgument("Please provide a message ID, a message link, or reply to a message.")
+
+        # Check if it is a Discord message link
+        pattern = r"https?://(?:ptb\.|canary\.)?discord\.com/channels/\d+/(\d+)/(\d+)"
+        match = re.match(pattern, query.strip())
+        if match:
+            channel_id = int(match.group(1))
+            message_id = int(match.group(2))
+            try:
+                channel = ctx.guild.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                return await channel.fetch_message(message_id)
+            except Exception:
+                raise commands.BadArgument("Could not fetch the message from the provided link. Make sure the bot has access to that channel.")
+        
+        # Check if it is a digit string (message ID)
+        if query.strip().isdigit():
+            try:
+                return await ctx.channel.fetch_message(int(query.strip()))
+            except Exception:
+                raise commands.BadArgument("Could not find a message with that ID in this channel.")
+                
+        raise commands.BadArgument("Invalid message ID or link format.")
+
+    async def _download_image(self, url: str) -> Image.Image:
+        try:
+            async with self.bot.web_client.get(url) as response:
+                if response.status == 200:
+                    data = await response.read()
+                    return Image.open(io.BytesIO(data))
+        except Exception as e:
+            logger.warning(f"Failed to download image from {url}: {e}")
+        # Return a fallback colored square
+        fallback = Image.new("RGB", (600, 600), (45, 125, 220))
+        return fallback
+
+    def _generate_quote_card(self, avatar, quote_text, quote_author, reply_author=None, reply_content=None) -> io.BytesIO:
+        canvas_w = 1200
+        canvas_h = 600
+        canvas = Image.new("RGB", (canvas_w, canvas_h), (0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+
+        # 1. Process Avatar (resize to 600x600, apply horizontal gradient)
+        avatar = avatar.convert("RGB").resize((600, 600), Image.Resampling.LANCZOS)
+        
+        mask_arr = np.zeros((600, 600), dtype=np.uint8)
+        for x in range(600):
+            if x < 100:
+                val = 255
+            elif x < 500:
+                val = int(255 * (1.0 - (x - 100) / 400.0))
+            else:
+                val = 0
+            mask_arr[:, x] = val
+        mask = Image.fromarray(mask_arr, mode="L")
+        canvas.paste(avatar, (0, 0), mask)
+
+        # 2. Setup Fonts
+        font_reg_path = "/usr/share/fonts/TTF/LiterationSansNerdFont-Regular.ttf"
+        font_bold_path = "/usr/share/fonts/TTF/LiterationSansNerdFont-Bold.ttf"
+        font_italic_path = "/usr/share/fonts/TTF/LiterationSansNerdFont-Italic.ttf"
+
+        def get_font(path, size):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                return ImageFont.load_default()
+
+        font_reply = get_font(font_italic_path, 20)
+        font_quote = get_font(font_reg_path, 34)
+        font_author = get_font(font_bold_path, 26)
+
+        # 3. Text wrap helper
+        def wrap_text(text, font, max_width):
+            words = text.split()
+            lines = []
+            current_line = []
+            for word in words:
+                current_line.append(word)
+                line_str = " ".join(current_line)
+                width = draw.textlength(line_str, font=font)
+                if width > max_width:
+                    if len(current_line) == 1:
+                        lines.append(line_str)
+                        current_line = []
+                    else:
+                        current_line.pop()
+                        lines.append(" ".join(current_line))
+                        current_line = [word]
+            if current_line:
+                lines.append(" ".join(current_line))
+            return lines
+
+        wrapped_quote_lines = wrap_text(f'“{quote_text}”', font_quote, 500)
+
+        # 4. Calculate total height for centering
+        reply_height = 24 if reply_author else 0
+        reply_spacing = 15 if reply_author else 0
+        
+        quote_line_height = int(34 * 1.3)
+        quote_height = len(wrapped_quote_lines) * quote_line_height
+        
+        author_height = 30
+        author_spacing = 25
+        
+        total_height = reply_height + reply_spacing + quote_height + author_spacing + author_height
+        
+        # Center vertically
+        start_y = (canvas_h - total_height) // 2
+        text_x = 650
+
+        # 5. Draw
+        current_y = start_y
+
+        # Draw reply preview if available
+        if reply_author:
+            reply_str = f"↱ @{reply_author}: {reply_content}"
+            if len(reply_str) > 55:
+                reply_str = reply_str[:52] + "..."
+            draw.text((text_x, current_y), reply_str, font=font_reply, fill=(160, 160, 160))
+            current_y += reply_height + reply_spacing
+
+        # Draw quote text
+        for line in wrapped_quote_lines:
+            draw.text((text_x, current_y), line, font=font_quote, fill=(255, 255, 255))
+            current_y += quote_line_height
+
+        # Draw author info
+        current_y += author_spacing
+        author_str = f"— {quote_author}"
+        draw.text((text_x, current_y), author_str, font=font_author, fill=(240, 240, 240))
+
+        # Convert to grayscale
+        canvas = canvas.convert("L")
+
+        # Save to bytes buffer
+        buf = io.BytesIO()
+        canvas.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+
+    @commands.hybrid_command(name="quote")
+    async def quote(self, ctx, message_id_or_link: str = None):
+        """Generates a beautiful quote card image of a message."""
+        await ctx.defer()
+        
+        try:
+            target_msg = await self._fetch_target_message(ctx, message_id_or_link)
+        except commands.BadArgument as e:
+            await ctx.reply(str(e))
+            return
+        except Exception as e:
+            await ctx.reply(f"An error occurred while fetching the message: `{e}`")
+            return
+
+        author = target_msg.author
+        quote_text = target_msg.clean_content or ""
+        
+        if not quote_text and target_msg.attachments:
+            quote_text = "*(Image/Attachment)*"
+        elif not quote_text:
+            quote_text = "*(No text)*"
+
+        avatar_url = author.display_avatar.with_format("png").with_size(1024).url
+        avatar = await self._download_image(avatar_url)
+
+        reply_author = None
+        reply_content = None
+        if target_msg.reference and target_msg.reference.message_id:
+            try:
+                ref_msg = target_msg.reference.resolved
+                if not isinstance(ref_msg, discord.Message):
+                    ref_channel = ctx.guild.get_channel(target_msg.reference.channel_id) or await self.bot.fetch_channel(target_msg.reference.channel_id)
+                    ref_msg = await ref_channel.fetch_message(target_msg.reference.message_id)
+                
+                reply_author = ref_msg.author.display_name
+                reply_content = ref_msg.clean_content or ""
+                if not reply_content and ref_msg.attachments:
+                    reply_content = "*(Attachment)*"
+            except Exception as e:
+                logger.warning(f"Failed to fetch reply reference: {e}")
+
+        try:
+            image_bytes = await asyncio.to_thread(
+                self._generate_quote_card,
+                avatar=avatar,
+                quote_text=quote_text,
+                quote_author=author.display_name,
+                reply_author=reply_author,
+                reply_content=reply_content
+            )
+            
+            discord_file = discord.File(image_bytes, filename="quote.png")
+            await ctx.reply(file=discord_file)
+        except Exception as e:
+            logger.exception("Failed to generate quote card image")
+            await ctx.reply(f"❌ Failed to generate quote card image: `{e}`")
 
 
 async def setup(bot):

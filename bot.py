@@ -219,6 +219,19 @@ async def main():
 
     discord.utils.setup_logging(handler=handler, formatter=formatter, root=True)
 
+    # Separate AI chatbot related logs into ai.log
+    ai_logger = logging.getLogger("cogs.ai")
+    ai_logger.setLevel(logging.INFO)
+    ai_logger.propagate = False
+    ai_handler = logging.handlers.RotatingFileHandler(
+        filename="ai.log",
+        encoding="utf-8",
+        maxBytes=32 * 1024 * 1024,
+        backupCount=5,
+    )
+    ai_handler.setFormatter(formatter)
+    ai_logger.addHandler(ai_handler)
+
 
     async with ClientSession() as client:
         # starting the bot
