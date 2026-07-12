@@ -4,6 +4,7 @@ from discord import ui
 
 from .connect4 import CFGame
 from .connect4 import MCTSPlayer
+from cogs.utils.constants import Emojis
 
 import discord
 import logging
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class CFMenuContainer(ui.Container):
-    C4_LOGO = "<:sAI_C4L:1462459349137096775>"
+    C4_LOGO = Emojis.C4_LOGO
 
     def __init__(self):
         super().__init__()
@@ -118,7 +119,7 @@ class CFMenuContainer(ui.Container):
 
 class CFWaitingContainer(ui.Container):
 
-    C4_LOGO = "<:sAI_C4L:1462459349137096775>"
+    C4_LOGO = Emojis.C4_LOGO
 
     def __init__(self, author_id, timeout_minutes = 3):
         super().__init__()
@@ -182,7 +183,7 @@ class CFWaitingContainer(ui.Container):
 
 class CFAIConfigContainer(ui.Container):
 
-    C4_LOGO = "<:sAI_C4L:1462459349137096775>"
+    C4_LOGO = Emojis.C4_LOGO
 
     SELECT_ID = 67
 
@@ -285,26 +286,26 @@ class CFAIConfigContainer(ui.Container):
 
 
 class CFGameContainer(ui.Container):
-    C4_LOGO = "<:sAI_C4L:1462459349137096775>"
+    C4_LOGO = Emojis.C4_LOGO
     
-    BOARD_EMPTY = "<:sAI_ME:1462171398192496917>"
-    BOARD_RED = "<:sAI_MR:1462200144350019754>"
-    BOARD_YELLOW = "<:sAI_MY:1462200170065297520>"
-    BOARD_LEFT_EMPTY = "<:sAI_CLE:1462174611813695548>"
-    BOARD_LEFT_RED = "<:sAI_CLR:1462199928511271063>"
-    BOARD_LEFT_YELLOW = "<:sAI_CLY:1462199963004965027>"
-    BOARD_RIGHT_EMPTY = "<:sAI_CRE:1462175903030312981>"
-    BOARD_RIGHT_RED = "<:sAI_CRR:1462200012355408135>"
-    BOARD_RIGHT_YELLOW = "<:sAI_CRY:1462200075945250957>"
-    BOARD_BASE_LEFT = "<:sAI_LB:1462454097083891884>"
-    BOARD_BASE_MIDDLE = "<:sAI_MB:1462453987369291867>"
-    BOARD_BASE_RIGHT = "<:sAI_RB:1462454152960409801>"
+    BOARD_EMPTY = Emojis.BOARD_EMPTY
+    BOARD_RED = Emojis.BOARD_RED
+    BOARD_YELLOW = Emojis.BOARD_YELLOW
+    BOARD_LEFT_EMPTY = Emojis.BOARD_LEFT_EMPTY
+    BOARD_LEFT_RED = Emojis.BOARD_LEFT_RED
+    BOARD_LEFT_YELLOW = Emojis.BOARD_LEFT_YELLOW
+    BOARD_RIGHT_EMPTY = Emojis.BOARD_RIGHT_EMPTY
+    BOARD_RIGHT_RED = Emojis.BOARD_RIGHT_RED
+    BOARD_RIGHT_YELLOW = Emojis.BOARD_RIGHT_YELLOW
+    BOARD_BASE_LEFT = Emojis.BOARD_BASE_LEFT
+    BOARD_BASE_MIDDLE = Emojis.BOARD_BASE_MIDDLE
+    BOARD_BASE_RIGHT = Emojis.BOARD_BASE_RIGHT
 
-    EMPTY = "<:empty:1454324278010056744>"
-    RED_PIECE = "<:sAI_PR:1462200246129004835>"
-    YELLOW_PIECE = "<:sAI_PY:1462200211186254009>"
+    EMPTY = Emojis.EMPTY
+    RED_PIECE = Emojis.RED_PIECE
+    YELLOW_PIECE = Emojis.YELLOW_PIECE
 
-    TO_MOVE_ARROW = "<a:sAI_rightarrow:1471523709981294709>"
+    TO_MOVE_ARROW = Emojis.TO_MOVE_ARROW
 
     SELECT_ROW_ID = 32
 
@@ -364,7 +365,7 @@ class CFGameContainer(ui.Container):
         # PLAYERS DISPLAY
         # TODO make the move arrow indicator
         rows[3] = rows[3] + f"{self.EMPTY}{self.EMPTY if self.game.current_player == self.game.YELLOW else self.TO_MOVE_ARROW}{self.RED_PIECE} <@{self.red_id}>"
-        rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}<:sAI_VS:1471123115126947901>"
+        rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}{Emojis.C4_VS}"
         rows[5] = rows[5] + f"{self.EMPTY}{self.EMPTY if self.game.current_player == self.game.RED else self.TO_MOVE_ARROW}{self.YELLOW_PIECE} <@{self.yellow_id}>"
         #############
 
@@ -387,7 +388,7 @@ class CFGameContainer(ui.Container):
         left_button.callback = self.move_left
         playerActionRow.add_item(left_button)
 
-        confirm_button = ui.Button(emoji="✅", style=discord.ButtonStyle.green)
+        confirm_button = ui.Button(emoji=Emojis.SUCCESS, style=discord.ButtonStyle.green)
         confirm_button.callback = self.confirm_move
         playerActionRow.add_item(confirm_button)
 
@@ -399,7 +400,7 @@ class CFGameContainer(ui.Container):
         resign_button.callback = self.resign
         playerActionRow.add_item(resign_button)
 
-        botTextDisplay = ui.TextDisplay("## <a:sAI_loading:1476194991809237152>  Bot is thinking...")
+        botTextDisplay = ui.TextDisplay(f"## {Emojis.LOADING}  Bot is thinking...")
 
         if (self.bot_turn):
             self.add_item(botTextDisplay)
@@ -495,10 +496,10 @@ class CFGameContainer(ui.Container):
 
 
 class CFEndContainer(ui.Container):
-    C4_LOGO = "<:sAI_C4L:1462459349137096775>"
-    EMPTY = "<:empty:1454324278010056744>"
-    RED_PIECE = "<:sAI_PR:1462200246129004835>"
-    YELLOW_PIECE = "<:sAI_PY:1462200211186254009>"
+    C4_LOGO = Emojis.C4_LOGO
+    EMPTY = Emojis.EMPTY
+    RED_PIECE = Emojis.RED_PIECE
+    YELLOW_PIECE = Emojis.YELLOW_PIECE
 
     def __init__(self, author_id, other_id, game: CFGame):
         super().__init__()
@@ -548,9 +549,9 @@ class CFEndContainer(ui.Container):
             rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}🤝"
             rows[5] = rows[5] + f"{self.EMPTY}➖{self.YELLOW_PIECE} <@{self.other_id}>"
         else:
-            rows[3] = rows[3] + f"{self.EMPTY}{"👑" if self.game.status == self.game.RED_WIN else "❌"}{self.RED_PIECE} <@{self.author_id}>"
-            #rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}<:sAI_VS:1471123115126947901>"
-            rows[5] = rows[5] + f"{self.EMPTY}{"👑" if self.game.status == self.game.YELLOW_WIN else "❌"}{self.YELLOW_PIECE} <@{self.other_id}>"
+            rows[3] = rows[3] + f"{self.EMPTY}{Emojis.CROWN if self.game.status == self.game.RED_WIN else Emojis.ERROR}{self.RED_PIECE} <@{self.author_id}>"
+            #rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}{Emojis.C4_VS}"
+            rows[5] = rows[5] + f"{self.EMPTY}{Emojis.CROWN if self.game.status == self.game.YELLOW_WIN else Emojis.ERROR}{self.YELLOW_PIECE} <@{self.other_id}>"
         #############
 
         #############
@@ -574,7 +575,7 @@ class CFEndContainer(ui.Container):
 
 
 class CFView(ui.LayoutView):
-    CF_EMOJI = "<:sAI_C4L:1462459349137096775>"
+    CF_EMOJI = Emojis.C4_LOGO
     
 
     def __init__(self, author_id, bot_id, *, timeout = None):
@@ -621,7 +622,7 @@ class CFView(ui.LayoutView):
         """
         titleDisplay = ui.TextDisplay(f"## {self.CF_EMOJI} Connect Four")
         separator = ui.Separator()
-        message = ui.TextDisplay(f"### No one joined <@{self.author_id}>'s game <:CC_yellow_angry:1441249440622182410>\nWaiting room ended {time}.\n-# Pro tip: do `/connect_four` to try again!")
+        message = ui.TextDisplay(f"### No one joined <@{self.author_id}>'s game {Emojis.YELLOW_ANGRY}\nWaiting room ended {time}.\n-# Pro tip: do `/connect_four` to try again!")
         lobby_expired_container = ui.Container(titleDisplay, separator, message, accent_color=discord.Color.red())
 
         self.clear_items()

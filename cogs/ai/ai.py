@@ -1,0 +1,734 @@
+import io
+import re
+import base64
+import logging
+import asyncio
+import json
+import os
+import datetime
+from abc import ABC, abstractmethod
+import discord
+from google.genai import types
+from google.genai.errors import APIError
+import openai
+import anthropic
+from xai_sdk.chat import user, system, image
+
+from cogs.utils.exceptions import (
+    AIError,
+    AIRateLimitError,
+    AIServiceUnavailableError,
+    AISafetyBlockedError,
+    AIConfigurationError
+)
+
+logger = logging.getLogger(__name__)
+
+class AIUsage:
+    def __init__(self, prompt_tokens: int, completion_tokens: int):
+        self.prompt_token_count = prompt_tokens
+        self.candidates_token_count = completion_tokens
+
+class AIResponse:
+    def __init__(self, text: str, prompt_tokens: int = 0, completion_tokens: int = 0, model_name: str = None, image_bytes: bytes = None, image_filename: str = None):
+        self.text = text
+        self.usage_metadata = AIUsage(prompt_tokens, completion_tokens)
+        self.model_name = model_name
+        self.image_bytes = image_bytes
+        self.image_filename = image_filename
+
+class Model(ABC):
+    """Represents a specific configured LLM (e.g. 'gpt-5-mini')."""
+    
+    def __init__(self, name: str, config: dict, clients: dict):
+        self.name = name
+        self.provider = config["provider"]
+        self.model_id = config["model_id"]
+        self.supports_vision = config.get("supports_vision", False)
+        self.supports_search = config.get("supports_search", False)
+        self.supports_image_gen = config.get("supports_image_gen", False)
+        self.display_name = config.get("name", name)
+        self.provider_display_name = config.get("provider_name", self.provider.capitalize())
+        system_inst = config.get("system_instruction", "")
+        if isinstance(system_inst, list):
+            self.system_instruction_template = "\n".join(system_inst)
+        else:
+            self.system_instruction_template = system_inst
+        self.clients = clients
+        
+    def _get_system_instructions(self) -> str:
+        today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
+        if self.system_instruction_template:
+            return self.system_instruction_template.format(today_str=today_str)
+        return ""
+
+    @abstractmethod
+    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+        pass
+
+
+    async def query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+        # 1. Run provider-specific text query
+        response = await self._execute_query(contents, timeout)
+        
+        # 2. Check for image generation tags
+        if response.text:
+            pattern = r"\[GENERATE_IMAGE:\s*(.*?)\]"
+            match = re.search(pattern, response.text, re.IGNORECASE | re.DOTALL)
+            
+            if match:
+                image_prompt = match.group(1).strip()
+                # Strip the tag from the text
+                stripped_text = re.sub(pattern, "", response.text, flags=re.IGNORECASE | re.DOTALL).strip()
+                response.text = stripped_text if stripped_text else None
+                    
+                # Call image generation (only if supported)
+                if self.supports_image_gen:
+                    logger.info(f"Image generation request detected in model response: {image_prompt}")
+                    img_bytes, filename = await self._generate_image(image_prompt)
+                    if img_bytes:
+                        response.image_bytes = img_bytes
+                        response.image_filename = filename
+                    else:
+                        raise AIError(f"Image generation failed for prompt: {image_prompt}")
+                    
+        return response
+
+
+    async def _generate_image(self, prompt: str) -> tuple:
+        """Override in subclasses that support image generation."""
+        return None, None
+
+class GeminiModel(Model):
+    
+    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+        client = self.clients.get("gemini")
+        if not client:
+            raise AIConfigurationError("Gemini client is not configured/available.")
+            
+        # 1. Filter vision
+        if not self.supports_vision:
+            query_contents = [item for item in contents if isinstance(item, str)]
+        else:
+            query_contents = contents
+
+        # 2. Search grounding
+        config_tools = None
+        if self.supports_search:
+            config_tools = [types.Tool(google_search=types.GoogleSearch())]
+            
+        try:
+            config = types.GenerateContentConfig(
+                system_instruction=self._get_system_instructions(),
+                tools=config_tools
+            )
+            
+            gemini_contents = []
+            for item in query_contents:
+                if isinstance(item, dict) and "data" in item:
+                    gemini_contents.append(
+                        types.Part.from_bytes(data=item["data"], mime_type=item.get("mime_type", "image/jpeg"))
+                    )
+                else:
+                    gemini_contents.append(item)
+            
+            response = await client.aio.models.generate_content(
+                model=self.model_id,
+                contents=gemini_contents,
+                config=config
+            )
+            
+            if not response.text:
+                raise AISafetyBlockedError("Gemini response blocked by safety filters.")
+                
+            prompt_tokens = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
+            completion_tokens = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+            return AIResponse(response.text, prompt_tokens, completion_tokens, model_name=self.model_id)
+            
+        except APIError as e:
+            code = getattr(e, 'code', None)
+            msg = str(e)
+            if code == 429 or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                raise AIRateLimitError("Gemini API rate limit exceeded") from e
+            elif code == 503 or code == 500 or "503" in msg or "UNAVAILABLE" in msg:
+                raise AIServiceUnavailableError("Gemini service unavailable") from e
+            else:
+                raise AIError(f"Gemini API error: {e}") from e
+        except AISafetyBlockedError as e:
+            raise e
+        except Exception as e:
+            raise AIError(f"Unexpected error in Gemini provider: {e}") from e
+
+    async def _generate_image(self, prompt: str) -> tuple:
+        client = self.clients.get("gemini")
+        if not client:
+            return None, None
+        try:
+            logger.info(f"Generating image via Gemini Imagen for prompt: {prompt}")
+            image_response = await client.aio.models.generate_images(
+                model='imagen-4.0-generate-001',
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    output_mime_type='image/jpeg'
+                )
+            )
+            if image_response and image_response.generated_images:
+                img_bytes = image_response.generated_images[0].image.image_bytes
+                return img_bytes, "generated_image.jpg"
+        except Exception as e:
+            logger.error(f"Gemini Image generation failed: {e}")
+        return None, None
+
+class OpenAIModel(Model):
+    def _convert_prompt(self, contents: list, is_responses_api: bool = False) -> list:
+        messages = [
+            {"role": "system", "content": self._get_system_instructions()}
+        ]
+        openai_contents = []
+        for item in contents:
+            if isinstance(item, str):
+                text_type = "input_text" if is_responses_api else "text"
+                openai_contents.append({"type": text_type, "text": item})
+            elif hasattr(item, 'inline_data') and item.inline_data:
+                img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
+                mime_type = item.inline_data.mime_type
+                img_type = "input_image" if is_responses_api else "image_url"
+                openai_contents.append({
+                    "type": img_type,
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{img_base64}"
+                    }
+                })
+            elif isinstance(item, dict) and "data" in item:
+                img_base64 = base64.b64encode(item["data"]).decode('utf-8')
+                mime_type = item.get("mime_type", "image/jpeg")
+                img_type = "input_image" if is_responses_api else "image_url"
+                openai_contents.append({
+                    "type": img_type,
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{img_base64}"
+                    }
+                })
+        messages.append({"role": "user", "content": openai_contents})
+        return messages
+
+    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+        client = self.clients.get("openai")
+        if not client:
+            raise AIConfigurationError("OpenAI client is not configured/available.")
+
+        if not self.supports_vision:
+            query_contents = [item for item in contents if isinstance(item, str)]
+        else:
+            query_contents = contents
+
+        try:
+            # Use Responses API if web search is enabled and supported by the SDK version
+            if self.supports_search and hasattr(client, "responses"):
+                messages = self._convert_prompt(query_contents, is_responses_api=True)
+                response = await client.responses.create(
+                    model=self.model_id,
+                    input=messages,
+                    tools=[{"type": "web_search"}]
+                )
+                text = response.output_text
+                prompt_tokens = response.usage.input_tokens if hasattr(response, 'usage') and response.usage else 0
+                completion_tokens = response.usage.output_tokens if hasattr(response, 'usage') and response.usage else 0
+            else:
+                messages = self._convert_prompt(query_contents, is_responses_api=False)
+                response = await client.chat.completions.create(
+                    model=self.model_id,
+                    messages=messages,
+                    max_completion_tokens=2048,
+                    temperature=1.2,
+                    presence_penalty=0.5
+                )
+                text = response.choices[0].message.content
+                prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+                completion_tokens = response.usage.completion_tokens if response.usage else 0
+            
+            if not text:
+                raise AISafetyBlockedError("OpenAI response blocked by safety filters.")
+            
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.model_id)
+        except openai.RateLimitError as e:
+            raise AIRateLimitError("OpenAI rate limit exceeded") from e
+        except (openai.APIConnectionError, openai.APITimeoutError) as e:
+            raise AIServiceUnavailableError("OpenAI connection or timeout error") from e
+        except openai.AuthenticationError as e:
+            raise AIConfigurationError("OpenAI invalid API key or configuration") from e
+        except openai.APIStatusError as e:
+            if e.status_code == 429:
+                raise AIRateLimitError("OpenAI rate limit exceeded") from e
+            elif e.status_code >= 500:
+                raise AIServiceUnavailableError(f"OpenAI service unavailable (status {e.status_code})") from e
+            else:
+                raise AIError(f"OpenAI API status error: {e}") from e
+        except AISafetyBlockedError as e:
+            raise e
+        except Exception as e:
+            raise AIError(f"Unexpected error in OpenAI provider: {e}") from e
+
+    async def _generate_image(self, prompt: str) -> tuple:
+        client = self.clients.get("openai")
+        if not client:
+            return None, None
+        
+        try:
+            logger.info(f"Generating image via OpenAI gpt-image-2 for prompt: {prompt}")
+            dalle_response = await client.images.generate(
+                model="gpt-image-2",
+                prompt=prompt,
+                n=1
+            )
+            if dalle_response and dalle_response.data:
+                item = dalle_response.data[0]
+                
+                # Check for b64_json first (default for gpt-image-2)
+                img_b64 = getattr(item, "b64_json", None)
+                if img_b64:
+                    img_bytes = base64.b64decode(img_b64)
+                    return img_bytes, "generated_image.png"
+                
+                # Fallback to url if provided
+                img_url = getattr(item, "url", None)
+                if img_url:
+                    logger.info(f"Downloading generated image from: {img_url}")
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(img_url) as resp:
+                            if resp.status == 200:
+                                img_bytes = await resp.read()
+                                return img_bytes, "generated_image.png"
+                            else:
+                                logger.error(f"Failed to download image: HTTP {resp.status}")
+        except Exception as e:
+            logger.error(f"OpenAI Image generation failed: {e}")
+            
+        return None, None
+
+class AnthropicModel(Model):
+    def _convert_prompt(self, contents: list) -> list:
+        messages = []
+        anthropic_contents = []
+        for item in contents:
+            if isinstance(item, str):
+                anthropic_contents.append({"type": "text", "text": item})
+            elif hasattr(item, 'inline_data') and item.inline_data:
+                img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
+                mime_type = item.inline_data.mime_type
+                anthropic_contents.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime_type,
+                        "data": img_base64
+                    }
+                })
+            elif isinstance(item, dict) and "data" in item:
+                img_base64 = base64.b64encode(item["data"]).decode('utf-8')
+                mime_type = item.get("mime_type", "image/jpeg")
+                anthropic_contents.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime_type,
+                        "data": img_base64
+                    }
+                })
+        messages.append({"role": "user", "content": anthropic_contents})
+        return messages
+
+    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+        client = self.clients.get("anthropic")
+        if not client:
+            raise AIConfigurationError("Anthropic client is not configured/available.")
+
+        if not self.supports_vision:
+            query_contents = [item for item in contents if isinstance(item, str)]
+        else:
+            query_contents = contents
+
+        try:
+            messages = self._convert_prompt(query_contents)
+            config_tools = []
+            if self.supports_search:
+                config_tools.append({
+                    "type": "web_search_20250305",
+                    "name": "web_search"
+                })
+                
+            response = await client.messages.create(
+                model=self.model_id,
+                system=self._get_system_instructions(),
+                messages=messages,
+                max_tokens=2048,
+                temperature=1.0,
+                tools=config_tools if config_tools else None
+            )
+            
+            text = ""
+            for block in response.content:
+                if block.type == "text":
+                    text += block.text
+                    
+            if not text:
+                raise AISafetyBlockedError("Anthropic response blocked by safety filters.")
+            prompt_tokens = response.usage.input_tokens if response.usage else 0
+            completion_tokens = response.usage.output_tokens if response.usage else 0
+            
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.model_id)
+        except anthropic.RateLimitError as e:
+            raise AIRateLimitError("Anthropic rate limit exceeded") from e
+        except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+            raise AIServiceUnavailableError("Anthropic connection or timeout error") from e
+        except anthropic.AuthenticationError as e:
+            raise AIConfigurationError("Anthropic invalid API key or configuration") from e
+        except anthropic.APIStatusError as e:
+            if e.status_code == 429:
+                raise AIRateLimitError("Anthropic rate limit exceeded") from e
+            elif e.status_code >= 500:
+                raise AIServiceUnavailableError(f"Anthropic service unavailable (status {e.status_code})") from e
+            else:
+                raise AIError(f"Anthropic API status error: {e}") from e
+        except AISafetyBlockedError as e:
+            raise e
+        except Exception as e:
+            raise AIError(f"Unexpected error in Anthropic provider: {e}") from e
+
+class GrokModel(Model):
+    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+        client = self.clients.get("grok")
+        if not client:
+            raise AIConfigurationError("Grok client is not configured/available.")
+
+        if not self.supports_vision:
+            query_contents = [item for item in contents if isinstance(item, str)]
+        else:
+            query_contents = contents
+
+        try:
+            config_tools = []
+            if self.supports_search:
+                try:
+                    from xai_sdk.tools import web_search
+                    config_tools.append(web_search())
+                except ImportError:
+                    logger.warning("xai_sdk.tools.web_search import failed. Search disabled for Grok.")
+
+            chat = client.chat.create(
+                model=self.model_id,
+                tools=config_tools if config_tools else None
+            )
+            chat.append(system(self._get_system_instructions()))
+            
+            user_args = []
+            for item in query_contents:
+                if isinstance(item, str):
+                    user_args.append(item)
+                elif isinstance(item, dict) and "data" in item:
+                    img_base64 = base64.b64encode(item["data"]).decode('utf-8')
+                    mime_type = item.get("mime_type", "image/jpeg")
+                    user_args.append(image(image_url=f"data:{mime_type};base64,{img_base64}"))
+                    
+            chat.append(user(*user_args))
+            response = await chat.sample()
+            
+            text = response.content
+            if not text:
+                raise AISafetyBlockedError("Grok response blocked by safety filters.")
+            prompt_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') and response.usage else 0
+            completion_tokens = response.usage.completion_tokens if hasattr(response, 'usage') and response.usage else 0
+            
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.model_id)
+        except Exception as e:
+            msg = str(e)
+            if "RESOURCE_EXHAUSTED" in msg or "429" in msg:
+                raise AIRateLimitError("Grok rate limit exceeded") from e
+            elif "UNAVAILABLE" in msg or "DEADLINE_EXCEEDED" in msg or "503" in msg:
+                raise AIServiceUnavailableError("Grok service connection error or timeout") from e
+            elif "UNAUTHENTICATED" in msg or "PERMISSION_DENIED" in msg:
+                raise AIConfigurationError("Grok invalid API key or configuration") from e
+            else:
+                raise AIError(f"Grok API error: {e}") from e
+
+    async def _generate_image(self, prompt: str) -> tuple:
+        client = self.clients.get("grok_openai")
+        if not client:
+            return None, None
+        
+        try:
+            logger.info(f"Generating image via Grok Imagine for prompt: {prompt}")
+            response = await client.images.generate(
+                model="grok-imagine-image",
+                prompt=prompt,
+                n=1
+            )
+            if response and response.data:
+                item = response.data[0]
+                
+                # Check for b64_json first
+                img_b64 = getattr(item, "b64_json", None)
+                if img_b64:
+                    img_bytes = base64.b64decode(img_b64)
+                    return img_bytes, "generated_image.png"
+                
+                # Check for url (standard for grok-imagine-image)
+                img_url = getattr(item, "url", None)
+                if img_url:
+                    logger.info(f"Downloading generated image from: {img_url}")
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(img_url) as resp:
+                            if resp.status == 200:
+                                img_bytes = await resp.read()
+                                return img_bytes, "generated_image.png"
+                            else:
+                                logger.error(f"Failed to download image: HTTP {resp.status}")
+        except Exception as e:
+            logger.error(f"Grok Image generation failed: {e}")
+            
+        return None, None
+
+PROVIDER_MAP = {
+    "gemini": GeminiModel,
+    "openai": OpenAIModel,
+    "anthropic": AnthropicModel,
+    "grok": GrokModel
+}
+
+class ModelManager:
+    """Holds active API client objects and performs the failover loop."""
+    def __init__(self):
+        self.clients = {}
+        self.models = {}
+        
+        # Initialize Google Client
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            from google import genai
+            self.clients["gemini"] = genai.Client(api_key=gemini_key)
+        else:
+            logger.error("GEMINI_API_KEY not found in environment variables.")
+
+        # Initialize OpenAI Client
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            import openai
+            self.clients["openai"] = openai.AsyncOpenAI(api_key=openai_key)
+        else:
+            logger.warning("OPENAI_API_KEY not found in environment variables.")
+
+        # Initialize Anthropic Client
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            import anthropic
+            self.clients["anthropic"] = anthropic.AsyncAnthropic(api_key=anthropic_key)
+        else:
+            logger.warning("ANTHROPIC_API_KEY not found in environment variables.")
+
+        # Initialize Grok Client
+        grok_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
+        if grok_key:
+            import xai_sdk
+            self.clients["grok"] = xai_sdk.AsyncClient(api_key=grok_key)
+            import openai
+            self.clients["grok_openai"] = openai.AsyncOpenAI(api_key=grok_key, base_url="https://api.x.ai/v1")
+        else:
+            logger.warning("GROK_API_KEY / XAI_API_KEY not found in environment variables.")
+            
+    def load_config(self, filepath: str):
+        with open(filepath, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+            
+        self.models = {}
+        for name, config in config_data.items():
+            provider = config.get("provider")
+            model_class = PROVIDER_MAP.get(provider)
+            if not model_class:
+                logger.warning(f"Unsupported or missing provider '{provider}' for model '{name}'. Skipping.")
+                continue
+            self.models[name] = model_class(name, config, self.clients)
+
+    async def execute_pipeline(self, model_names: list, contents: list, timeout: float = 15.0) -> AIResponse:
+        from cogs.utils.exceptions import (
+            AIError,
+            AIRateLimitError,
+            AIServiceUnavailableError,
+            AISafetyBlockedError,
+            AIConfigurationError
+        )
+        
+        last_exception = None
+        for name in model_names:
+            model = self.models.get(name)
+            if not model:
+                logger.warning(f"Model '{name}' requested but not found in registry. Skipping.")
+                continue
+                
+            try:
+                actual_timeout = timeout + 90.0 if model.supports_image_gen else timeout
+                logger.info(f"Attempting response using model: {name} (timeout: {actual_timeout}s)")
+                response = await asyncio.wait_for(
+                    model.query(contents, timeout=actual_timeout),
+                    timeout=float(actual_timeout)
+                )
+                return response
+            except asyncio.TimeoutError as e:
+                last_exception = AIServiceUnavailableError(f"Model '{name}' timed out after {actual_timeout}s", original_error=e)
+                logger.warning(f"Model '{name}' timed out. Trying next backup...")
+            except (AIRateLimitError, AIServiceUnavailableError) as e:
+                last_exception = e
+                logger.warning(f"Model '{name}' failed with transient error: {e}. Trying next backup...")
+            except (AISafetyBlockedError, AIConfigurationError) as e:
+                logger.error(f"Model '{name}' failed with critical error: {e}. Aborting failover.")
+                raise e
+            except Exception as e:
+                last_exception = AIError(f"Model '{name}' failed with unexpected error: {e}")
+                logger.warning(f"Model '{name}' failed with unexpected error: {e}. Trying next backup...")
+                
+        raise last_exception or AIError("No configured models succeeded in the pipeline.")
+
+class ContextManager:
+    """Formats chat transcripts and extracts file attachments as raw bytes."""
+    
+    @staticmethod
+    def _is_image(attachment: discord.Attachment) -> bool:
+        if attachment.content_type:
+            return attachment.content_type.startswith("image/")
+        filename = attachment.filename.lower()
+        return filename.endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.bmp'))
+
+    @staticmethod
+    def _get_mime_type(attachment: discord.Attachment) -> str:
+        if attachment.content_type:
+            return attachment.content_type
+        filename = attachment.filename.lower()
+        if filename.endswith('.png'): return 'image/png'
+        if filename.endswith(('.jpg', '.jpeg')): return 'image/jpeg'
+        if filename.endswith('.webp'): return 'image/webp'
+        if filename.endswith('.gif'): return 'image/gif'
+        if filename.endswith('.heic'): return 'image/heic'
+        if filename.endswith('.bmp'): return 'image/bmp'
+        return 'image/jpeg'
+
+    @classmethod
+    def format_history(cls, message_list: list) -> str:
+        result = ""
+        for message in message_list:
+            sender = message.author
+            content = message.content or ""
+            
+            attachments_str = ""
+            if message.attachments:
+                att_types = []
+                for att in message.attachments:
+                    if cls._is_image(att):
+                        att_types.append("[Image]")
+                    else:
+                        att_types.append(f"[{att.filename}]")
+                attachments_str = " " + " ".join(att_types)
+
+            if message.reference is not None:
+                ref_message = message.reference.resolved
+                if ref_message is not None and not isinstance(ref_message, discord.DeletedReferencedMessage): 
+                    ref_author = ref_message.author 
+                    ref_content = ref_message.content or ""
+                    
+                    ref_attachments_str = ""
+                    if ref_message.attachments:
+                        ref_att_types = []
+                        for att in ref_message.attachments:
+                            if cls._is_image(att):
+                                ref_att_types.append("[Image]")
+                            else:
+                                ref_att_types.append(f"[{att.filename}]")
+                        ref_attachments_str = " " + " ".join(ref_att_types)
+                        
+                    ref_text = (ref_content + ref_attachments_str).strip() or "[Attachment/Embed]"
+                    if len(ref_text) > 100:                                                                                                  
+                        ref_text = ref_text[:97] + "..."                                                                                  
+                    result += f"> [{ref_author}]: \"{ref_text}\"\n"    
+            
+            msg_text = (content + attachments_str).strip()
+            result += f"[{sender}]: {msg_text}\n"
+        return result
+
+    @classmethod
+    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str) -> list:
+        contents = []
+        
+        # 1. Read message attachments
+        for att in message.attachments:
+            if cls._is_image(att):
+                try:
+                    img_bytes = await att.read()
+                    contents.append({"data": img_bytes, "mime_type": cls._get_mime_type(att)})
+                except Exception as e:
+                    logger.error(f"Failed to read message attachment image: {e}")
+
+        # 2. Check reply attachments
+        if message.reference and message.reference.message_id:
+            try:
+                ref_msg = message.reference.resolved
+                if not ref_msg or isinstance(ref_msg, discord.DeletedReferencedMessage):
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                
+                if ref_msg:
+                    for att in ref_msg.attachments:
+                        if cls._is_image(att):
+                            img_bytes = await att.read()
+                            contents.append({"data": img_bytes, "mime_type": cls._get_mime_type(att)})
+            except Exception as e:
+                logger.error(f"Failed to read reply referenced image: {e}")
+                
+        # 3. Add the formatted context and prompt
+        formatted_history = cls.format_history(history)
+        full_prompt = f"Recent Chat:\n{formatted_history}\n\n{prompt}"
+        contents.append(full_prompt)
+        
+        return contents
+
+class ResponseHandler:
+    """Manages output formatting, message-splitting, and Discord reply delivery."""
+    def __init__(self):
+        pass
+
+    async def orchestrate_reply(self, message_or_ctx, response: AIResponse):
+        if response.text and "[IGNORE]" in response.text:
+            logger.info("Ignored message because model returned [IGNORE]")
+            return
+            
+        clean_text = response.text
+        if clean_text and response.model_name:
+            clean_text = f"{clean_text}\n-# {response.model_name}"
+        file = None
+        if response.image_bytes:
+            file = discord.File(io.BytesIO(response.image_bytes), filename=response.image_filename or "generated_image.jpg")
+            
+        is_ctx = hasattr(message_or_ctx, 'send')
+        
+        if clean_text:
+            if len(clean_text) > 2000:
+                parts = [clean_text[i:i+1900] for i in range(0, len(clean_text), 1900)]
+                for part in parts:
+                    if is_ctx:
+                        await message_or_ctx.send(part)
+                    else:
+                        await message_or_ctx.channel.send(part)
+                if file:
+                    if is_ctx:
+                        await message_or_ctx.send(file=file)
+                    else:
+                        await message_or_ctx.channel.send(file=file)
+            else:
+                if is_ctx:
+                    await message_or_ctx.reply(clean_text, file=file)
+                else:
+                    await message_or_ctx.reply(clean_text, file=file)
+        elif file:
+            if is_ctx:
+                await message_or_ctx.reply(file=file)
+            else:
+                await message_or_ctx.reply(file=file)

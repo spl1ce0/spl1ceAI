@@ -19,3 +19,4 @@ Pillow
 openai
 anthropic
 xai-sdk
+pilmoji

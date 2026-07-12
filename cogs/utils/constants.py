@@ -1,0 +1,99 @@
+class Emojis:
+    # Generic status & reactions
+    SUCCESS = "✅"
+    ERROR = "❌"
+    WARNING = "⚠️"
+    ROBOT = "🤖"
+    RELOAD = "🔄"
+    
+    # Custom AI emojis
+    AI_FROWN = "<:sAI_frown:1513642744394944722>"
+    AI_HIGH_DEMAND = "<:sAI_high_demand:1513623669308657766>"
+    AI_HAND_LIMIT = "<:sAI_hand_limit:1513659143456559235>"
+    
+    # Custom provider icons
+    GEMINI = "<:sAI_gemini:1515921338106380369>"
+    CHATGPT = "<:sAI_chatgpt:1515922050739601418>"
+    CLAUDE = "<:sAI_claude:1515922404671754411>"
+    DEEPSEEK = "<:sAI_deepseek:1515922761732849664>"
+    GROK = "<:sAI_grok:1516602717290893383>"
+    
+    # Custom fun & system emojis
+    YELLOW_LOOK = "<:CC_yellow_look:1440119405991166186>"
+    YELLOW_ANGRY = "<:CC_yellow_angry:1441249440622182410>"
+    EMPTY = "<:empty:1454324278010056744>"
+    
+    # Connect 4 logo and vs
+    C4_LOGO = "<:sAI_C4L:1462459349137096775>"
+    C4_VS = "<:sAI_VS:1471123115126947901>"
+    
+    # Connect 4 board elements
+    BOARD_EMPTY = "<:sAI_ME:1462171398192496917>"
+    BOARD_RED = "<:sAI_MR:1462200144350019754>"
+    BOARD_YELLOW = "<:sAI_MY:1462200170065297520>"
+    BOARD_LEFT_EMPTY = "<:sAI_CLE:1462174611813695548>"
+    BOARD_LEFT_RED = "<:sAI_CLR:1462199928511271063>"
+    BOARD_LEFT_YELLOW = "<:sAI_CLY:1462199963004965027>"
+    BOARD_RIGHT_EMPTY = "<:sAI_CRE:1462175903030312981>"
+    BOARD_RIGHT_RED = "<:sAI_CRR:1462200012355408135>"
+    BOARD_RIGHT_YELLOW = "<:sAI_CRY:1462200075945250957>"
+    BOARD_BASE_LEFT = "<:sAI_LB:1462454097083891884>"
+    BOARD_BASE_MIDDLE = "<:sAI_MB:1462453987369291867>"
+    BOARD_BASE_RIGHT = "<:sAI_RB:1462454152960409801>"
+    
+    # Connect 4 pieces & state
+    RED_PIECE = "<:sAI_PR:1462200246129004835>"
+    YELLOW_PIECE = "<:sAI_PY:1462200211186254009>"
+    TO_MOVE_ARROW = "<a:sAI_rightarrow:1471523709981294709>"
+    LOADING = "<a:sAI_loading:1476194991809237152>"
+    CROWN = "👑"
+    
+    # Custom fun & banned emojis
+    BANNED = "<a:sAI_banned:1478422889668542545>"
+    
+    # Settings buttons emojis (placeholders)
+    ON = "<:sAI_on:1524517702041997434>"
+    OFF = "<:sAI_off:1524512020945440981>"
+    EDIT = "<:sAI_edit:1524892990395515022>"
+
+class ErrorMessages:
+    QUOTA_REACHED = f"{Emojis.AI_FROWN} Daily AI token quota reached! Please try again tomorrow."
+    BUSY_OR_LIMIT = f"{Emojis.AI_HIGH_DEMAND} API is too busy or you got rate limited! Please try again in a moment."
+    SAFETY_BLOCKED = "🛡️ Response blocked by Gemini safety filters."
+    UNEXPECTED = f"{Emojis.WARNING} An unexpected error occurred while processing your request."
+
+    @staticmethod
+    def image_process_failed(error_msg: str) -> str:
+        return f"{Emojis.WARNING} Failed to process attachment image: {error_msg}"
+
+    @staticmethod
+    def attachment_not_image() -> str:
+        return f"{Emojis.WARNING} Attached file is not an image."
+
+    @staticmethod
+    def already_listening() -> str:
+        return f"{Emojis.WARNING} I'm already listening in this channel!"
+
+    @staticmethod
+    def invalid_duration() -> str:
+        return f"{Emojis.WARNING} Invalid duration. Use '30m', '1h', etc."
+
+
+class SuccessMessages:
+    @staticmethod
+    def summon_success(time_str: str) -> str:
+        return f"**spl1ceAI summoned.** I will answer mentions and replies.\n-# Ends {time_str}"
+
+
+class InfoMessages:
+    @staticmethod
+    def summon_ended(tokens: int) -> str:
+        return f"⌛ **spl1ceAI summon ended.** I am no longer listening.\n-# Session used `{tokens}` tokens."
+
+    @staticmethod
+    def usage_stats(day: str, requests: int, tokens: int, limit: int, in_tokens: int, out_tokens: int) -> str:
+        return f"📊 **AI Usage Today ({day})**\n- Requests: `{requests}`\n- Tokens: `{tokens} / {limit}`\n  - In: `{in_tokens}`\n  - Out: `{out_tokens}`"
+
+    @staticmethod
+    def usage_none(day: str) -> str:
+        return f"📊 **AI Usage Today ({day})**\nNo usage recorded today."

@@ -1,4 +1,5 @@
 import discord
+from cogs.utils.constants import Emojis
 from discord import ui
 from discord.ext import commands
 import logging
@@ -187,7 +188,7 @@ class SettingsContainer(ui.Container):
     def _make_container(self):
         ################
         # TITLE DISPLAY
-        titleString = f"## {self.ICON} Server Settings"
+        titleString = f"## Server Settings"
         titleDisplay = ui.TextDisplay(titleString)
         self.add_item(titleDisplay)
         ################
@@ -201,7 +202,7 @@ class SettingsContainer(ui.Container):
             f"**Command Prefix:** `{prefix}`\n"
             f"-# The prefix used to trigger commands in the server."
         )
-        prefix_button = ui.Button(label="edit", style=discord.ButtonStyle.gray)
+        prefix_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         prefix_button.callback = self.prefix_change
         prefix_section = ui.Section(prefix_display, accessory=prefix_button)
         self.add_item(prefix_section)
@@ -224,7 +225,7 @@ class SettingsContainer(ui.Container):
             f"**Chat Bot Channel**\n"
             f"-# The channel where the bot automatically responds to all chat messages."
         )
-        cbc_button = ui.Button(label=cbc_state, style=discord.ButtonStyle.gray)
+        cbc_button = ui.Button(emoji=Emojis.ON if cbc_state == "on" else Emojis.OFF, style=discord.ButtonStyle.gray)
         cbc_button.callback = self.cbc_toggle
         cbc_section = ui.Section(cbc_textdisplay, accessory=cbc_button)
         self.add_item(cbc_section)
@@ -247,27 +248,38 @@ class SettingsContainer(ui.Container):
         backup1 = self.guild_settings.get("llm_backup1", "openai")
         backup2 = self.guild_settings.get("llm_backup2", "anthropic")
         
-        names_emojis = {
-            "gemini": "<:sAI_gemini:1515921338106380369>",
-            "openai": "<:sAI_chatgpt:1515922050739601418>",
-            "anthropic": "<:sAI_claude:1515922404671754411>",
-            "deepseek": "<:sAI_deepseek:1515922761732849664>",
-            "grok": "<:sAI_grok:1516602717290893383>"
-        }
-        
-        active_chain = [names_emojis.get(primary)]
+        # Resolve emojis dynamically based on provider
+        ai_cog = self.bot.get_cog("AI")
+        models_map = ai_cog.model_manager.models if ai_cog and hasattr(ai_cog, "model_manager") else {}
+
+        def get_model_emoji(model_name):
+            model = models_map.get(model_name)
+            if model:
+                if model.provider == "gemini": return Emojis.GEMINI
+                if model.provider == "openai": return Emojis.CHATGPT
+                if model.provider == "anthropic": return Emojis.CLAUDE
+                if model.provider == "grok": return Emojis.GROK
+            # Fallbacks in case of legacy names
+            mn = model_name.lower()
+            if "gemini" in mn: return Emojis.GEMINI
+            if "openai" in mn or "gpt" in mn or "chatgpt" in mn: return Emojis.CHATGPT
+            if "anthropic" in mn or "claude" in mn: return Emojis.CLAUDE
+            if "grok" in mn: return Emojis.GROK
+            return "🤖"
+
+        active_chain = [f"{get_model_emoji(primary)} `{primary}`"]
         if backup1 != "disabled":
-            active_chain.append(names_emojis.get(backup1))
+            active_chain.append(f"{get_model_emoji(backup1)} `{backup1}`")
         if backup2 != "disabled":
-            active_chain.append(names_emojis.get(backup2))
-        
+            active_chain.append(f"{get_model_emoji(backup2)} `{backup2}`")
+
         pipeline_str = " ➔ ".join(active_chain)
         
         pipeline_display = ui.TextDisplay(
             f"**AI Fallback Chain:** {pipeline_str}\n"
             f"-# The fallback order of AI models used to handle user messages."
         )
-        pipeline_button = ui.Button(label="configure", style=discord.ButtonStyle.gray)
+        pipeline_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         pipeline_button.callback = self.pipeline_configure
         pipeline_section = ui.Section(pipeline_display, accessory=pipeline_button)
         self.add_item(pipeline_section)
@@ -324,7 +336,7 @@ class SettingsContainer(ui.Container):
 
 class SettingsView(ui.LayoutView):
 
-    def __init__(self, guild_settings, guild, bot, *, timeout = 180):
+    def __init__(self, guild_settings, guild, bot, *, timeout = None):
         super().__init__(timeout=timeout)
         self.guild_settings = guild_settings
         self.guild = guild
@@ -356,7 +368,7 @@ class AIPipelineContainer(ui.Container):
         self._make_container()
 
     def _make_container(self):
-        titleDisplay = ui.TextDisplay(f"## {self.ICON} AI Fallback Chain")
+        titleDisplay = ui.TextDisplay(f"## AI Fallback Chain")
         self.add_item(titleDisplay)
         
         self.add_item(ui.Separator())
@@ -374,7 +386,7 @@ class AIPipelineContainer(ui.Container):
         backup2 = self.guild_settings.get("llm_backup2", "anthropic")
 
         # Spacer using your custom empty emoji to center the arrow
-        arrow_spacer = "<:empty:1454324278010056744>" * 9
+        arrow_spacer = Emojis.EMPTY * 9
 
         primary_select = PrimarySelect(self.guild, self.bot, primary)
         primary_row = ui.ActionRow()
@@ -401,7 +413,7 @@ class AIPipelineContainer(ui.Container):
             f"**Timeout per Model:** `{llm_timeout}s`\n"
             f"-# The maximum time (in seconds) the bot waits for each model to respond before falling back to the next."
         )
-        timeout_button = ui.Button(label="edit timeout", style=discord.ButtonStyle.gray)
+        timeout_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         timeout_button.callback = self.timeout_change
         timeout_section = ui.Section(timeout_display, accessory=timeout_button)
         self.add_item(timeout_section)
@@ -430,20 +442,31 @@ class PrimarySelect(ui.Select):
         self.bot = bot
         self.guild = guild
         
+        options = []
         ai_cog = self.bot.get_cog("AI")
-        gemini_desc = f"Gemini ({ai_cog.model_name})" if ai_cog else "Google Gemini Flash Lite"
-        openai_desc = f"ChatGPT ({ai_cog.openai_model})" if ai_cog else "OpenAI GPT-4o-mini"
-        anthropic_desc = f"Claude ({ai_cog.anthropic_model})" if ai_cog else "Anthropic Claude 3 Haiku"
-        deepseek_desc = f"DeepSeek ({ai_cog.deepseek_model})" if ai_cog else "DeepSeek Coder/Chat V3"
-        grok_desc = f"Grok ({ai_cog.grok_model})" if ai_cog else "xAI Grok 2"
+        if ai_cog and hasattr(ai_cog, "model_manager") and ai_cog.model_manager:
+            for name, model in ai_cog.model_manager.models.items():
+                provider_emoji = Emojis.GEMINI
+                if model.provider == "openai":
+                    provider_emoji = Emojis.CHATGPT
+                elif model.provider == "anthropic":
+                    provider_emoji = Emojis.CLAUDE
+                elif model.provider == "grok":
+                    provider_emoji = Emojis.GROK
+                
+                label = model.display_name
+                desc = model.provider_display_name
+                options.append(discord.SelectOption(
+                    label=label, 
+                    value=name, 
+                    description=desc[:100], 
+                    emoji=provider_emoji
+                ))
         
-        options = [
-            discord.SelectOption(label="Gemini", value="gemini", description=gemini_desc, emoji="<:sAI_gemini:1515921338106380369>"),
-            discord.SelectOption(label="ChatGPT", value="openai", description=openai_desc, emoji="<:sAI_chatgpt:1515922050739601418>"),
-            discord.SelectOption(label="Claude", value="anthropic", description=anthropic_desc, emoji="<:sAI_claude:1515922404671754411>"),
-            discord.SelectOption(label="DeepSeek", value="deepseek", description=deepseek_desc, emoji="<:sAI_deepseek:1515922761732849664>"),
-            discord.SelectOption(label="Grok", value="grok", description=grok_desc, emoji="<:sAI_grok:1516602717290893383>")
-        ]
+        if not options:
+            options = [
+                discord.SelectOption(label="Gemini Flash Lite", value="gemini-flash-lite-latest", emoji=Emojis.GEMINI)
+            ]
         
         placeholder = "Select Primary AI..."
         for opt in options:
@@ -476,21 +499,33 @@ class Backup1Select(ui.Select):
         self.bot = bot
         self.guild = guild
         
+        options = []
         ai_cog = self.bot.get_cog("AI")
-        gemini_desc = f"Gemini ({ai_cog.model_name})" if ai_cog else "Google Gemini Flash Lite"
-        openai_desc = f"ChatGPT ({ai_cog.openai_model})" if ai_cog else "OpenAI GPT-4o-mini"
-        anthropic_desc = f"Claude ({ai_cog.anthropic_model})" if ai_cog else "Anthropic Claude 3 Haiku"
-        deepseek_desc = f"DeepSeek ({ai_cog.deepseek_model})" if ai_cog else "DeepSeek Coder/Chat V3"
-        grok_desc = f"Grok ({ai_cog.grok_model})" if ai_cog else "xAI Grok 2"
+        if ai_cog and hasattr(ai_cog, "model_manager") and ai_cog.model_manager:
+            for name, model in ai_cog.model_manager.models.items():
+                provider_emoji = Emojis.GEMINI
+                if model.provider == "openai":
+                    provider_emoji = Emojis.CHATGPT
+                elif model.provider == "anthropic":
+                    provider_emoji = Emojis.CLAUDE
+                elif model.provider == "grok":
+                    provider_emoji = Emojis.GROK
+                
+                label = model.display_name
+                desc = model.provider_display_name
+                options.append(discord.SelectOption(
+                    label=label, 
+                    value=name, 
+                    description=desc[:100], 
+                    emoji=provider_emoji
+                ))
         
-        options = [
-            discord.SelectOption(label="Gemini", value="gemini", description=gemini_desc, emoji="<:sAI_gemini:1515921338106380369>"),
-            discord.SelectOption(label="ChatGPT", value="openai", description=openai_desc, emoji="<:sAI_chatgpt:1515922050739601418>"),
-            discord.SelectOption(label="Claude", value="anthropic", description=anthropic_desc, emoji="<:sAI_claude:1515922404671754411>"),
-            discord.SelectOption(label="DeepSeek", value="deepseek", description=deepseek_desc, emoji="<:sAI_deepseek:1515922761732849664>"),
-            discord.SelectOption(label="Grok", value="grok", description=grok_desc, emoji="<:sAI_grok:1516602717290893383>"),
-            discord.SelectOption(label="Disabled", value="disabled", description="Disable 1st Backup", emoji="❌")
-        ]
+        if not options:
+            options = [
+                discord.SelectOption(label="ChatGPT Mini", value="gpt-5.4-mini", emoji=Emojis.CHATGPT)
+            ]
+        
+        options.append(discord.SelectOption(label="Disabled", value="disabled", description="Disable 1st Backup", emoji="❌"))
         
         placeholder = "Select 1st Backup..."
         for opt in options:
@@ -523,21 +558,33 @@ class Backup2Select(ui.Select):
         self.bot = bot
         self.guild = guild
         
+        options = []
         ai_cog = self.bot.get_cog("AI")
-        gemini_desc = f"Gemini ({ai_cog.model_name})" if ai_cog else "Google Gemini Flash Lite"
-        openai_desc = f"ChatGPT ({ai_cog.openai_model})" if ai_cog else "OpenAI GPT-4o-mini"
-        anthropic_desc = f"Claude ({ai_cog.anthropic_model})" if ai_cog else "Anthropic Claude 3 Haiku"
-        deepseek_desc = f"DeepSeek ({ai_cog.deepseek_model})" if ai_cog else "DeepSeek Coder/Chat V3"
-        grok_desc = f"Grok ({ai_cog.grok_model})" if ai_cog else "xAI Grok 2"
+        if ai_cog and hasattr(ai_cog, "model_manager") and ai_cog.model_manager:
+            for name, model in ai_cog.model_manager.models.items():
+                provider_emoji = Emojis.GEMINI
+                if model.provider == "openai":
+                    provider_emoji = Emojis.CHATGPT
+                elif model.provider == "anthropic":
+                    provider_emoji = Emojis.CLAUDE
+                elif model.provider == "grok":
+                    provider_emoji = Emojis.GROK
+                
+                label = model.display_name
+                desc = model.provider_display_name
+                options.append(discord.SelectOption(
+                    label=label, 
+                    value=name, 
+                    description=desc[:100], 
+                    emoji=provider_emoji
+                ))
         
-        options = [
-            discord.SelectOption(label="Gemini", value="gemini", description=gemini_desc, emoji="<:sAI_gemini:1515921338106380369>"),
-            discord.SelectOption(label="ChatGPT", value="openai", description=openai_desc, emoji="<:sAI_chatgpt:1515922050739601418>"),
-            discord.SelectOption(label="Claude", value="anthropic", description=anthropic_desc, emoji="<:sAI_claude:1515922404671754411>"),
-            discord.SelectOption(label="DeepSeek", value="deepseek", description=deepseek_desc, emoji="<:sAI_deepseek:1515922761732849664>"),
-            discord.SelectOption(label="Grok", value="grok", description=grok_desc, emoji="<:sAI_grok:1516602717290893383>"),
-            discord.SelectOption(label="Disabled", value="disabled", description="Disable 2nd Backup", emoji="❌")
-        ]
+        if not options:
+            options = [
+                discord.SelectOption(label="Claude Haiku", value="claude-haiku-4-5-20251001", emoji=Emojis.CLAUDE)
+            ]
+        
+        options.append(discord.SelectOption(label="Disabled", value="disabled", description="Disable 2nd Backup", emoji="❌"))
         
         placeholder = "Select 2nd Backup..."
         for opt in options:
@@ -584,9 +631,9 @@ class Settings(commands.Cog):
             self.bot.settings_cache[guild_id] = {
                 "prefix": "!",
                 "cbc": None,
-                "llm_primary": "gemini",
-                "llm_backup1": "openai",
-                "llm_backup2": "anthropic"
+                "llm_primary": "gemini-flash-lite-latest",
+                "llm_backup1": "gpt-5.4-mini",
+                "llm_backup2": "claude-haiku-4-5-20251001"
             }
         view = SettingsView(self.bot.settings_cache[guild_id], ctx.guild, self.bot)
         await ctx.reply(view=view)

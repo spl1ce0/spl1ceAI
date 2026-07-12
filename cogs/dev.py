@@ -2,6 +2,7 @@ from discord.ext import commands as cmds
 from discord.ext.commands import Context, GuildConverter
 
 import discord
+from cogs.utils.constants import Emojis
 from discord import ui
 import typing
 from typing import Optional
@@ -26,7 +27,7 @@ class Dev(cmds.Cog):
     async def alive(self, ctx):
         """Tells if the bot is alive."""
 
-        await ctx.reply("Yes I'm alive, broski. <:CC_yellow_look:1440119405991166186>")
+        await ctx.reply(f"Yes I'm alive, broski. {Emojis.YELLOW_LOOK}")
 
 
     @cmds.group(name='extensions', aliases=['ext'])
@@ -45,10 +46,10 @@ class Dev(cmds.Cog):
         try:
             await self.bot.reload_extension("cogs."+extension)
         except cmds.ExtensionError as e:
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             logger.error(f'{e.__class__.__name__}: {e}')
         else:
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
 
 
     @extensions.command(name='load')
@@ -61,10 +62,10 @@ class Dev(cmds.Cog):
         try:
             await self.bot.load_extension("cogs."+extension)
         except cmds.ExtensionError as e:
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             logger.error(f'{e.__class__.__name__}: {e}')
         else:
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
         
 
     @extensions.command(name='unload')
@@ -77,10 +78,10 @@ class Dev(cmds.Cog):
         try:
             await self.bot.unload_extension("cogs."+extension)
         except cmds.ExtensionError as e:
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             logger.error(f'{e.__class__.__name__}: {e}')
         else:
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
         
 
     async def reload_all(self, ctx: Context):
@@ -98,15 +99,15 @@ class Dev(cmds.Cog):
                 failed.append(f"{extension} (Error: {e})")
 
         if failed:
-            message_lines = [f"✅ Reloaded: {', '.join(reloaded) if reloaded else 'None'}"]
-            message_lines.append("❌ Failed:")
+            message_lines = [f"{Emojis.SUCCESS} Reloaded: {', '.join(reloaded) if reloaded else 'None'}"]
+            message_lines.append(f"{Emojis.ERROR} Failed:")
             for failure in failed:
                 message_lines.append(f"  - {failure}")
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             await ctx.reply("\n".join(message_lines))
             
         else:
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
     
 
     async def load_all(self, ctx: Context):
@@ -128,14 +129,14 @@ class Dev(cmds.Cog):
                 failed.append(f"{extension} (Error: {e})")
 
         if failed:
-            message_lines = [f"✅ Loaded: {', '.join(loaded) if loaded else 'None'}"]
-            message_lines.append("❌ Failed:")
+            message_lines = [f"{Emojis.SUCCESS} Loaded: {', '.join(loaded) if loaded else 'None'}"]
+            message_lines.append(f"{Emojis.ERROR} Failed:")
             for failure in failed:
                 message_lines.append(f"  - {failure}")
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             await ctx.reply("\n".join(message_lines))
         else:
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
     
 
     async def unload_all(self, ctx: Context):
@@ -153,14 +154,14 @@ class Dev(cmds.Cog):
                 failed.append(f"{extension} (Error: {e})")
 
         if failed:
-            message_lines = [f"✅ Unloaded: {', '.join(unloaded) if unloaded else 'None'}"]
-            message_lines.append("❌ Failed:")
+            message_lines = [f"{Emojis.SUCCESS} Unloaded: {', '.join(unloaded) if unloaded else 'None'}"]
+            message_lines.append(f"{Emojis.ERROR} Failed:")
             for failure in failed:
                 message_lines.append(f"  - {failure}")
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             await ctx.reply("\n".join(message_lines))
         else:
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
 
 
 
@@ -168,7 +169,7 @@ class Dev(cmds.Cog):
     @cmds.is_owner()
     async def update(self, ctx):
         """Runs the update.sh script to update the bot."""
-        await ctx.message.add_reaction('🔄')
+        await ctx.message.add_reaction(Emojis.RELOAD)
         
         data = {
             'channel_id': ctx.channel.id,
@@ -188,7 +189,7 @@ class Dev(cmds.Cog):
     @cmds.is_owner()
     async def restart(self, ctx):
         """Restarts the bot by closing the connection and letting the service manager restart it."""
-        await ctx.message.add_reaction('🔄')
+        await ctx.message.add_reaction(Emojis.RELOAD)
         
         data = {
             'channel_id': ctx.channel.id,
@@ -222,15 +223,15 @@ class Dev(cmds.Cog):
         elif scope == 'global':
             guild = None
         else:
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             return
         
         try:
             self.bot.tree.remove_command(command, guild=guild)
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
         except Exception as e:
             logger.error(f"Remove command failed: {e}")
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
         
     
     @commands.command(name='clear')
@@ -244,15 +245,15 @@ class Dev(cmds.Cog):
         elif scope == 'global':
             guild = None
         else:
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             return
 
         try:
             self.bot.tree.clear_commands(guild=guild)
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
         except Exception as e:
             logger.error(f"Clear commands failed: {e}")
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
 
 
     @commands.command(name='sync')
@@ -265,15 +266,15 @@ class Dev(cmds.Cog):
         elif scope == 'global':
             guild = None
         else:
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             return
         
         try: 
             await self.bot.tree.sync(guild=guild)
-            await ctx.message.add_reaction('✅')
+            await ctx.message.add_reaction(Emojis.SUCCESS)
         except Exception as e:
             logger.error(f"Sync command failed: {e}")
-            await ctx.message.add_reaction('❌')
+            await ctx.message.add_reaction(Emojis.ERROR)
             
     @cmds.command(name='logs')
     @cmds.is_owner()
@@ -316,7 +317,7 @@ class LogFileSelect(discord.ui.Select):
                 label="discord.log", 
                 value="discord.log", 
                 description="Main bot system logs",
-                emoji="🤖"
+                emoji=Emojis.ROBOT
             ),
             discord.SelectOption(
                 label="ai.log", 
@@ -362,7 +363,7 @@ class LogPaginationView(discord.ui.View):
         self.older_btn = discord.ui.Button(label="◀ Older", style=discord.ButtonStyle.gray, row=1)
         self.older_btn.callback = self.older_callback
         
-        self.refresh_btn = discord.ui.Button(label="🔄 Refresh", style=discord.ButtonStyle.blurple, row=1)
+        self.refresh_btn = discord.ui.Button(emoji=Emojis.RELOAD, label="Refresh", style=discord.ButtonStyle.blurple, row=1)
         self.refresh_btn.callback = self.refresh_callback
         
         self.newer_btn = discord.ui.Button(label="Newer ▶", style=discord.ButtonStyle.gray, row=1)
@@ -413,7 +414,7 @@ class LogPaginationView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not await self.bot.is_owner(interaction.user):
-            await interaction.response.send_message("❌ This menu is developer-only.", ephemeral=True)
+            await interaction.response.send_message(f"{Emojis.ERROR} This menu is developer-only.", ephemeral=True)
             return False
         return True
 
