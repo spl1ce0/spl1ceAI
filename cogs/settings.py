@@ -267,11 +267,11 @@ class SettingsContainer(ui.Container):
             if "grok" in mn: return Emojis.GROK
             return "🤖"
 
-        active_chain = [f"{get_model_emoji(primary)} `{primary}`"]
+        active_chain = [f"{get_model_emoji(primary)}"]
         if backup1 != "disabled":
-            active_chain.append(f"{get_model_emoji(backup1)} `{backup1}`")
+            active_chain.append(f"{get_model_emoji(backup1)}")
         if backup2 != "disabled":
-            active_chain.append(f"{get_model_emoji(backup2)} `{backup2}`")
+            active_chain.append(f"{get_model_emoji(backup2)}")
 
         pipeline_str = " ➔ ".join(active_chain)
         
