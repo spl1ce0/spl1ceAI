@@ -40,7 +40,7 @@ class AIResponse:
 class Model(ABC):
     """Represents a specific configured LLM (e.g. 'gpt-5-mini')."""
     
-    def __init__(self, name: str, config: dict, clients: dict):
+    def __init__(self, name: str, config: dict, clients: dict, default_instruction: str = ""):
         self.name = name
         self.provider = config["provider"]
         self.model_id = config["model_id"]
@@ -49,7 +49,19 @@ class Model(ABC):
         self.supports_image_gen = config.get("supports_image_gen", False)
         self.display_name = config.get("name", name)
         self.provider_display_name = config.get("provider_name", self.provider.capitalize())
-        system_inst = config.get("system_instruction", "")
+        
+        # Resolve prompt inheritance
+        override = config.get("system_instruction_override")
+        additions = config.get("system_instruction_additions")
+        
+        if override is not None:
+            system_inst = override
+        elif additions is not None:
+            add_str = "\n".join(additions) if isinstance(additions, list) else additions
+            system_inst = f"{default_instruction}\n{add_str}".strip()
+        else:
+            system_inst = default_instruction
+            
         if isinstance(system_inst, list):
             self.system_instruction_template = "\n".join(system_inst)
         else:
@@ -543,13 +555,18 @@ class ModelManager:
             config_data = json.load(f)
             
         self.models = {}
+        default_inst_list = config_data.get("default_instruction", [])
+        default_inst = "\n".join(default_inst_list) if isinstance(default_inst_list, list) else default_inst_list
+        
         for name, config in config_data.items():
+            if name == "default_instruction":
+                continue
             provider = config.get("provider")
             model_class = PROVIDER_MAP.get(provider)
             if not model_class:
                 logger.warning(f"Unsupported or missing provider '{provider}' for model '{name}'. Skipping.")
                 continue
-            self.models[name] = model_class(name, config, self.clients)
+            self.models[name] = model_class(name, config, self.clients, default_instruction=default_inst)
 
     async def execute_pipeline(self, model_names: list, contents: list, timeout: float = 15.0) -> AIResponse:
         from cogs.utils.exceptions import (

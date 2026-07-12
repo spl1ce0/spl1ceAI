@@ -176,13 +176,13 @@ class Dev(cmds.Cog):
             'message_id': ctx.message.id,
             'start_time': time.time()
         }
-        await self.bot.db.execute(
-            "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
-            ('restart_info', json.dumps(data))
-        )
-        await self.bot.db.commit()
+        await self.bot.db_manager.save_system_state('restart_info', json.dumps(data))
             
-        subprocess.run(['./update.sh'])
+        try:
+            await asyncio.create_subprocess_exec('./update.sh')
+        except Exception as e:
+            logger.error(f"Failed to start update process: {e}")
+            await ctx.message.add_reaction(Emojis.ERROR)
 
 
     @cmds.command(name='restart')
@@ -196,11 +196,7 @@ class Dev(cmds.Cog):
             'message_id': ctx.message.id,
             'start_time': time.time()
         }
-        await self.bot.db.execute(
-            "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
-            ('restart_info', json.dumps(data))
-        )
-        await self.bot.db.commit()
+        await self.bot.db_manager.save_system_state('restart_info', json.dumps(data))
             
         await asyncio.sleep(1)
         await self.bot.close()
@@ -307,6 +303,9 @@ class Dev(cmds.Cog):
             parse_arg(arg2)
 
         view = LogPaginationView(self.bot, log_filename=log_filename, page_size=lines)
+        await view.load_logs()
+        view.current_page = view.total_pages - 1
+        view.update_buttons()
         await ctx.reply(content=view.get_page_content(), view=view)
 
 
@@ -323,7 +322,7 @@ class LogFileSelect(discord.ui.Select):
                 label="ai.log", 
                 value="ai.log", 
                 description="AI chatbot fallback & conversation logs",
-                emoji="🧠"
+                emoji=Emojis.BRAIN
             ),
         ]
         super().__init__(placeholder="Select log file...", min_values=1, max_values=1, options=options)
@@ -334,7 +333,7 @@ class LogFileSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         view: LogPaginationView = self.view
         view.log_filename = self.values[0]
-        view.load_logs()
+        await view.load_logs()
         view.current_page = view.total_pages - 1
         view.update_select_menu()
         view.update_buttons()
@@ -351,9 +350,6 @@ class LogPaginationView(discord.ui.View):
         self.lines = []
         self.current_page = 0
         self.total_pages = 0
-        
-        self.load_logs()
-        self.current_page = self.total_pages - 1
         
         # Select menu component
         self.select_menu = None
@@ -372,8 +368,6 @@ class LogPaginationView(discord.ui.View):
         self.add_item(self.older_btn)
         self.add_item(self.refresh_btn)
         self.add_item(self.newer_btn)
-        
-        self.update_buttons()
 
     def update_select_menu(self):
         if self.select_menu:
@@ -382,16 +376,18 @@ class LogPaginationView(discord.ui.View):
         self.select_menu.row = 0
         self.add_item(self.select_menu)
 
-    def load_logs(self):
-        if not os.path.exists(self.log_filename):
-            self.lines = [f"Log file '{self.log_filename}' not found."]
-        else:
+    async def load_logs(self):
+        def _read_file_sync(filename, history_limit):
+            if not os.path.exists(filename):
+                return [f"Log file '{filename}' not found."]
             try:
-                with open(self.log_filename, "r", encoding="utf-8", errors="replace") as f:
+                with open(filename, "r", encoding="utf-8", errors="replace") as f:
                     all_lines = f.readlines()
-                    self.lines = all_lines[-self.lines_history:]
+                    return all_lines[-history_limit:]
             except Exception as e:
-                self.lines = [f"Error reading log file: {e}"]
+                return [f"Error reading log file: {e}"]
+
+        self.lines = await asyncio.to_thread(_read_file_sync, self.log_filename, self.lines_history)
         
         self.total_pages = (len(self.lines) + self.page_size - 1) // self.page_size
         if self.total_pages == 0:
@@ -425,7 +421,7 @@ class LogPaginationView(discord.ui.View):
         await interaction.response.edit_message(content=self.get_page_content(), view=self)
 
     async def refresh_callback(self, interaction: discord.Interaction):
-        self.load_logs()
+        await self.load_logs()
         if self.current_page >= self.total_pages:
             self.current_page = self.total_pages - 1
         if self.current_page < 0:

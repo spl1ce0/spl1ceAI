@@ -2,8 +2,7 @@
 from discord.ext import commands
 from discord import ui
 
-from .connect4 import CFGame
-from .connect4 import MCTSPlayer
+from .connect4 import CFGame, run_mcts
 from cogs.utils.constants import Emojis
 
 import discord
@@ -11,6 +10,7 @@ import logging
 import datetime
 import asyncio
 from random import randint
+from concurrent.futures import ProcessPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +259,6 @@ class CFAIConfigContainer(ui.Container):
         view.assign_players(view.author_id, view.bot_id)
         view.bot_difficulty = int(select.values[0])
         view.game = CFGame()
-        view.mcts_player = MCTSPlayer()
         view.game_view(interaction=interaction)
 
         await interaction.response.edit_message(view=view)
@@ -384,7 +383,7 @@ class CFGameContainer(ui.Container):
         
         playerActionRow = ui.ActionRow()
         
-        left_button = ui.Button(label="◀")
+        left_button = ui.Button(label=Emojis.ARROW_LEFT)
         left_button.callback = self.move_left
         playerActionRow.add_item(left_button)
 
@@ -392,11 +391,11 @@ class CFGameContainer(ui.Container):
         confirm_button.callback = self.confirm_move
         playerActionRow.add_item(confirm_button)
 
-        right_button = ui.Button(label="▶")
+        right_button = ui.Button(label=Emojis.ARROW_RIGHT)
         right_button.callback = self.move_right
         playerActionRow.add_item(right_button)
 
-        resign_button = ui.Button(emoji="🏳️", style=discord.ButtonStyle.red)
+        resign_button = ui.Button(emoji=Emojis.FLAG, style=discord.ButtonStyle.red)
         resign_button.callback = self.resign
         playerActionRow.add_item(resign_button)
 
@@ -545,9 +544,9 @@ class CFEndContainer(ui.Container):
         #############
         # PLAYERS DISPLAY
         if (self.game.status == self.game.DRAW):
-            rows[3] = rows[3] + f"{self.EMPTY}➖{self.RED_PIECE} <@{self.author_id}>"
-            rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}🤝"
-            rows[5] = rows[5] + f"{self.EMPTY}➖{self.YELLOW_PIECE} <@{self.other_id}>"
+            rows[3] = rows[3] + f"{self.EMPTY}{Emojis.MINUS}{self.RED_PIECE} <@{self.author_id}>"
+            rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}{Emojis.HANDSHAKE}"
+            rows[5] = rows[5] + f"{self.EMPTY}{Emojis.MINUS}{self.YELLOW_PIECE} <@{self.other_id}>"
         else:
             rows[3] = rows[3] + f"{self.EMPTY}{Emojis.CROWN if self.game.status == self.game.RED_WIN else Emojis.ERROR}{self.RED_PIECE} <@{self.author_id}>"
             #rows[4] = rows[4] + f"{self.EMPTY}{self.EMPTY}{Emojis.C4_VS}"
@@ -578,19 +577,19 @@ class CFView(ui.LayoutView):
     CF_EMOJI = Emojis.C4_LOGO
     
 
-    def __init__(self, author_id, bot_id, *, timeout = None):
+    def __init__(self, author_id, bot, *, timeout = None):
         super().__init__(timeout=timeout)
         
+        self.bot = bot
         self.game = None
         self.author_id = author_id
         self.red_player_id = None
         self.yellow_player_id = None
-        self.bot_id = bot_id
+        self.bot_id = bot.user.id
         self.bot_difficulty = None
         self.gamemode = None
         self.current_player_id = None
         self.bot_turn = False
-        self.mcts_player = None
         self._bot_turn_task = None
         self._wait_for_player_task = None
 
@@ -734,9 +733,10 @@ class CFView(ui.LayoutView):
         game = view.game
 
         loop = asyncio.get_running_loop()
+        games_cog = view.bot.get_cog("Games")
         bot_move = await loop.run_in_executor(
-            None, 
-            view.mcts_player.choose_move, 
+            games_cog.process_executor, 
+            run_mcts, 
             game, 
             view.bot_difficulty
         )
@@ -781,6 +781,10 @@ class CFView(ui.LayoutView):
 class Games(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.process_executor = ProcessPoolExecutor()
+
+    def cog_unload(self):
+        self.process_executor.shutdown(wait=False)
 
 
     @commands.hybrid_command(name="connect_four", aliases=["connect4", "c4", "con4", "connectfour"])
@@ -790,7 +794,7 @@ class Games(commands.Cog):
         Starts a Connect Four game.
         """
 
-        view = CFView(ctx.author.id, ctx.bot.user.id, timeout=None)
+        view = CFView(ctx.author.id, ctx.bot, timeout=None)
 
         await ctx.reply(view=view)
 

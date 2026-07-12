@@ -53,22 +53,19 @@ class AI(commands.Cog):
         return False
 
     async def cog_load(self):
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute("SELECT channel_id, expiry FROM ai_summon")
-            rows = await cursor.fetchall()
-            for row in rows:
-                self.active_summons[row[0]] = {'expiry': row[1], 'tokens': 0}
+        rows = await self.bot.db_manager.get_all_summons()
+        for row in rows:
+            self.active_summons[row[0]] = {'expiry': row[1], 'tokens': 0}
         logger.info(f"Loaded {len(self.active_summons)} active summons.")
 
     async def check_quota(self):
         today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute("SELECT input_tokens, output_tokens FROM ai_usage WHERE day = ?", (today,))
-            row = await cursor.fetchone()
-            if row:
-                total_tokens = row[0] + row[1]
-                if total_tokens >= self.DAILY_TOKEN_LIMIT:
-                    return False
+        usage = await self.bot.db_manager.get_daily_usage(today)
+        if usage:
+            in_tok, out_tok, _ = usage
+            total_tokens = in_tok + out_tok
+            if total_tokens >= self.DAILY_TOKEN_LIMIT:
+                return False
         return True
 
     async def update_usage(self, response, channel_id=None):
@@ -80,16 +77,7 @@ class AI(commands.Cog):
         total = in_tokens + out_tokens
         
         today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO ai_usage (day, request_count, input_tokens, output_tokens) VALUES (?, 1, ?, ?) "
-                "ON CONFLICT(day) DO UPDATE SET request_count = request_count + 1, "
-                "input_tokens = input_tokens + excluded.input_tokens, "
-                "output_tokens = output_tokens + excluded.output_tokens",
-                (today, in_tokens, out_tokens)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.record_ai_usage(today, in_tokens, out_tokens)
             
         if channel_id and channel_id in self.active_summons:
             self.active_summons[channel_id]['tokens'] += total
@@ -277,12 +265,7 @@ class AI(commands.Cog):
         
         expiry = datetime.datetime.now().timestamp() + seconds
         
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT OR REPLACE INTO ai_summon (channel_id, expiry) VALUES (?, ?)",
-                (ctx.channel.id, expiry)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.save_summon(ctx.channel.id, expiry)
         
         self.active_summons[ctx.channel.id] = {'expiry': expiry, 'tokens': 0}
         time_str = discord.utils.format_dt(datetime.datetime.fromtimestamp(expiry), style='R')
@@ -297,15 +280,13 @@ class AI(commands.Cog):
     async def usage(self, ctx):
         """Shows today's AI usage statistics."""
         today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute("SELECT request_count, input_tokens, output_tokens FROM ai_usage WHERE day = ?", (today,))
-            row = await cursor.fetchone()
-            if row:
-                reqs, in_tok, out_tok = row
-                total = in_tok + out_tok
-                await ctx.reply(InfoMessages.usage_stats(today, reqs, total, self.DAILY_TOKEN_LIMIT, in_tok, out_tok))
-            else:
-                await ctx.reply(InfoMessages.usage_none(today))
+        usage = await self.bot.db_manager.get_daily_usage(today)
+        if usage:
+            in_tok, out_tok, reqs = usage
+            total = in_tok + out_tok
+            await ctx.reply(InfoMessages.usage_stats(today, reqs, total, self.DAILY_TOKEN_LIMIT, in_tok, out_tok))
+        else:
+            await ctx.reply(InfoMessages.usage_none(today))
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -331,9 +312,7 @@ class AI(commands.Cog):
             if now > self.active_summons[channel_id]['expiry']:
                 tokens_used = self.active_summons[channel_id]['tokens']
                 del self.active_summons[channel_id]
-                async with self.bot.db.cursor() as cursor:
-                    await cursor.execute("DELETE FROM ai_summon WHERE channel_id = ?", (channel_id,))
-                    await self.bot.db.commit()
+                await self.bot.db_manager.delete_summon(channel_id)
                 
                 try:
                     await message.channel.send(InfoMessages.summon_ended(tokens_used))

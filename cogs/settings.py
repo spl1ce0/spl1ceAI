@@ -1,5 +1,5 @@
 import discord
-from cogs.utils.constants import Emojis
+from cogs.utils.constants import Emojis, DefaultSettings
 from discord import ui
 from discord.ext import commands
 import logging
@@ -27,15 +27,9 @@ class PrefixModal(ui.Modal, title="Change Server Prefix"):
         new_prefix = self.prefix_input.value
         
         # Save prefix to database
-        async with self.view.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET prefix = excluded.prefix",
-                (self.guild_id, new_prefix)
-            )
-            await self.view.bot.db.commit()
+        await self.view.bot.db_manager.update_guild_setting(self.guild_id, "prefix", new_prefix)
 
-        self.view.bot.settings_cache.setdefault(self.guild_id, {"prefix": "=", "cbc": None})["prefix"] = new_prefix
+        self.view.bot.settings_cache.setdefault(self.guild_id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["prefix"] = new_prefix
         self.view.guild_settings = self.view.bot.settings_cache[self.guild_id]
         
         self.view._main_menu_view()
@@ -67,13 +61,7 @@ class TimeoutModal(ui.Modal, title="Change Model Timeout"):
             await interaction.response.send_message(f"❌ Invalid input: {e}", ephemeral=True)
             return
             
-        async with self.view.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, llm_timeout) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET llm_timeout = excluded.llm_timeout",
-                (self.guild_id, new_timeout)
-            )
-            await self.view.bot.db.commit()
+        await self.view.bot.db_manager.update_guild_setting(self.guild_id, "llm_timeout", new_timeout)
 
         self.view.bot.settings_cache.setdefault(self.guild_id, {})["llm_timeout"] = new_timeout
         self.view.guild_settings["llm_timeout"] = new_timeout
@@ -109,13 +97,13 @@ class CBCSelect(ui.Select):
 
         options = []
         if page_start > 0:
-            options.append(discord.SelectOption(label="◀ Previous Page", value="__prev__"))
+            options.append(discord.SelectOption(label=f"{Emojis.ARROW_LEFT} Previous Page", value="__prev__"))
 
         for ch in page_channels:
             options.append(discord.SelectOption(label="# " + ch.name, value=str(ch.id)))
 
         if page_end < total_channels:
-            options.append(discord.SelectOption(label="Next Page ▶", value="__next__"))
+            options.append(discord.SelectOption(label=f"Next Page {Emojis.ARROW_RIGHT}", value="__next__"))
 
         placeholder = "Select a channel..."
         if self.selected_id:
@@ -155,15 +143,9 @@ class CBCSelect(ui.Select):
             return
 
         # UPDATE DATABASE
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, cbc) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET cbc = excluded.cbc",
-                (self.guild.id, selected)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "cbc", selected)
 
-        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": "=", "cbc": None})["cbc"] = selected
+        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["cbc"] = selected
         self.selected_id = selected
         self.options, self.placeholder = self._make_options()
         try:
@@ -315,15 +297,9 @@ class SettingsContainer(ui.Container):
             new_cbc = None
 
         # UPDATE DATABASE
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, cbc) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET cbc = excluded.cbc",
-                (self.guild.id, new_cbc)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "cbc", new_cbc)
 
-        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": "=", "cbc": None})["cbc"] = new_cbc
+        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["cbc"] = new_cbc
         if self.guild_settings is not None:
             self.guild_settings["cbc"] = new_cbc
 
@@ -421,14 +397,14 @@ class AIPipelineContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # Back button
-        back_button = ui.Button(label="◀ Back", style=discord.ButtonStyle.gray)
+        back_button = ui.Button(label=f"{Emojis.ARROW_LEFT} Back", style=discord.ButtonStyle.gray)
         back_button.callback = self.back_to_settings
         back_row = ui.ActionRow()
         back_row.add_item(back_button)
         self.add_item(back_row)
 
     async def timeout_change(self, interaction: discord.Interaction):
-        llm_timeout = self.guild_settings.get("llm_timeout", 15)
+        llm_timeout = self.guild_settings.get("llm_timeout", DefaultSettings.LLM_TIMEOUT)
         await interaction.response.send_modal(TimeoutModal(llm_timeout, self.guild.id, self.view))
 
     async def back_to_settings(self, interaction: discord.Interaction):
@@ -479,13 +455,7 @@ class PrimarySelect(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         selected = self.values[0]
         
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, llm_primary) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET llm_primary = excluded.llm_primary",
-                (self.guild.id, selected)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "llm_primary", selected)
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["llm_primary"] = selected
         self.view.guild_settings["llm_primary"] = selected
@@ -525,7 +495,7 @@ class Backup1Select(ui.Select):
                 discord.SelectOption(label="ChatGPT Mini", value="gpt-5.4-mini", emoji=Emojis.CHATGPT)
             ]
         
-        options.append(discord.SelectOption(label="Disabled", value="disabled", description="Disable 1st Backup", emoji="❌"))
+        options.append(discord.SelectOption(label="Disabled", value="disabled", description="Disable 1st Backup", emoji=Emojis.ERROR))
         
         placeholder = "Select 1st Backup..."
         for opt in options:
@@ -538,13 +508,7 @@ class Backup1Select(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         selected = self.values[0]
         
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, llm_backup1) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET llm_backup1 = excluded.llm_backup1",
-                (self.guild.id, selected)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "llm_backup1", selected)
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["llm_backup1"] = selected
         self.view.guild_settings["llm_backup1"] = selected
@@ -584,7 +548,7 @@ class Backup2Select(ui.Select):
                 discord.SelectOption(label="Claude Haiku", value="claude-haiku-4-5-20251001", emoji=Emojis.CLAUDE)
             ]
         
-        options.append(discord.SelectOption(label="Disabled", value="disabled", description="Disable 2nd Backup", emoji="❌"))
+        options.append(discord.SelectOption(label="Disabled", value="disabled", description="Disable 2nd Backup", emoji=Emojis.ERROR))
         
         placeholder = "Select 2nd Backup..."
         for opt in options:
@@ -597,13 +561,7 @@ class Backup2Select(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         selected = self.values[0]
         
-        async with self.bot.db.cursor() as cursor:
-            await cursor.execute(
-                "INSERT INTO guild_settings (guild_id, llm_backup2) VALUES (?, ?) "
-                "ON CONFLICT(guild_id) DO UPDATE SET llm_backup2 = excluded.llm_backup2",
-                (self.guild.id, selected)
-            )
-            await self.bot.db.commit()
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "llm_backup2", selected)
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["llm_backup2"] = selected
         self.view.guild_settings["llm_backup2"] = selected
@@ -629,11 +587,13 @@ class Settings(commands.Cog):
         guild_id = ctx.guild.id
         if guild_id not in self.bot.settings_cache:
             self.bot.settings_cache[guild_id] = {
-                "prefix": "!",
-                "cbc": None,
-                "llm_primary": "gemini-flash-lite-latest",
-                "llm_backup1": "gpt-5.4-mini",
-                "llm_backup2": "claude-haiku-4-5-20251001"
+                "prefix": DefaultSettings.PREFIX,
+                "cbc": DefaultSettings.CBC,
+                "llm_primary": DefaultSettings.LLM_PRIMARY,
+                "llm_backup1": DefaultSettings.LLM_BACKUP1,
+                "llm_backup2": DefaultSettings.LLM_BACKUP2,
+                "llm_backup3": DefaultSettings.LLM_BACKUP3,
+                "llm_timeout": DefaultSettings.LLM_TIMEOUT
             }
         view = SettingsView(self.bot.settings_cache[guild_id], ctx.guild, self.bot)
         await ctx.reply(view=view)

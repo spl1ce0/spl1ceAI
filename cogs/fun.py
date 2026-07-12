@@ -17,7 +17,7 @@ except ImportError:
     HAS_PILMOJI = False
 from discord import ui
 from discord.ext.commands import MemberConverter
-from cogs.utils.constants import Emojis
+from cogs.utils.constants import Emojis, ErrorMessages
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class Fun(commands.Cog):
                     info = await asyncio.to_thread(ydl.extract_info, collection_url, download=False)
                     
                 if 'entries' not in info:
-                    return await ctx.reply("Could not find any videos in the collection! 😢")
+                    return await ctx.reply(ErrorMessages.TIKTOK_NO_VIDEOS)
                 
                 urls = [entry.get('url') or f"https://www.tiktok.com/video/{entry['id']}" for entry in info['entries']]
                 random.shuffle(urls)
@@ -92,7 +92,9 @@ class Fun(commands.Cog):
                             real_info = await asyncio.to_thread(ydl.extract_info, video_url, download=False)
                             duration = real_info.get('duration')
                         
-                        with tempfile.TemporaryDirectory() as tmpdir:
+                        import shutil
+                        tmpdir = await asyncio.to_thread(tempfile.mkdtemp)
+                        try:
                             target_mb = 7
                             audio_bitrate_kbps = 96
                             
@@ -140,17 +142,19 @@ class Fun(commands.Cog):
                                 discord_file = discord.File(f, filename="tiktok.mp4")
                                 await ctx.reply(file=discord_file)
                                 return 
+                        finally:
+                            await asyncio.to_thread(shutil.rmtree, tmpdir, ignore_errors=True)
                                 
                     except Exception as e:
                         last_error = str(e)
                         logger.warning(f"Attempt {attempt + 1} failed for {video_url}: {e}")
                         continue
 
-                await ctx.reply(f"All {MAX_ATTEMPTS} attempts failed. Last error: `{last_error}`")
+                await ctx.reply(ErrorMessages.tiktok_failed(last_error))
                         
             except Exception as e:
                 logger.error(f"{command_name.capitalize()} command failed: {e}")
-                await ctx.reply(f"Something went wrong while fetching the {command_name}! {emoji}\n`{e}`")
+                await ctx.reply(ErrorMessages.tiktok_general_error(command_name, emoji, str(e)))
 
     @commands.hybrid_command(name="sealion")
     async def sealion(self, ctx):
@@ -181,7 +185,7 @@ class Fun(commands.Cog):
         try:
             user = await MemberConverter().convert(ctx, member)
         except commands.MemberNotFound:  
-            await ctx.reply("User not found.\n-# Mention the user or provide their ID.", ephemeral=True)  
+            await ctx.reply(ErrorMessages.QUOTE_MEMBER_NOT_FOUND, ephemeral=True)  
             return
         
         ban_container = FakeBanContainer(user, reason)
@@ -195,7 +199,7 @@ class Fun(commands.Cog):
         if not query:
             if ctx.message.reference and ctx.message.reference.message_id:
                 return await ctx.channel.fetch_message(ctx.message.reference.message_id)
-            raise commands.BadArgument("Please provide a message ID, a message link, or reply to a message.")
+            raise commands.BadArgument(ErrorMessages.QUOTE_BAD_ARGUMENT)
 
         # Check if it is a Discord message link
         pattern = r"https?://(?:ptb\.|canary\.)?discord\.com/channels/\d+/(\d+)/(\d+)"
@@ -207,16 +211,16 @@ class Fun(commands.Cog):
                 channel = ctx.guild.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                 return await channel.fetch_message(message_id)
             except Exception:
-                raise commands.BadArgument("Could not fetch the message from the provided link. Make sure the bot has access to that channel.")
+                raise commands.BadArgument(ErrorMessages.QUOTE_LINK_FETCH_FAILED)
         
         # Check if it is a digit string (message ID)
         if query.strip().isdigit():
             try:
                 return await ctx.channel.fetch_message(int(query.strip()))
             except Exception:
-                raise commands.BadArgument("Could not find a message with that ID in this channel.")
+                raise commands.BadArgument(ErrorMessages.QUOTE_ID_FETCH_FAILED)
                 
-        raise commands.BadArgument("Invalid message ID or link format.")
+        raise commands.BadArgument(ErrorMessages.QUOTE_INVALID_FORMAT)
 
     async def _download_image(self, url: str) -> Image.Image:
         try:
@@ -399,7 +403,7 @@ class Fun(commands.Cog):
             await ctx.reply(str(e))
             return
         except Exception as e:
-            await ctx.reply(f"An error occurred while fetching the message: `{e}`")
+            await ctx.reply(ErrorMessages.quote_fetch_error(str(e)))
             return
 
         def restore_custom_emojis(clean_text, raw_text):
@@ -427,9 +431,9 @@ class Fun(commands.Cog):
         quote_text = restore_custom_emojis(quote_text, target_msg.content)
             
         if not quote_text and target_msg.attachments:
-            quote_text = "*(Image/Attachment)*"
+            quote_text = ErrorMessages.QUOTE_ATTACHMENT_PLACEHOLDER
         elif not quote_text:
-            quote_text = "*(No text)*"
+            quote_text = ErrorMessages.QUOTE_NO_TEXT_PLACEHOLDER
 
         avatar_url = author.display_avatar.with_format("png").with_size(1024).url
         avatar = await self._download_image(avatar_url)
@@ -448,7 +452,7 @@ class Fun(commands.Cog):
                 reply_content = restore_custom_emojis(reply_content, ref_msg.content)
                     
                 if not reply_content and ref_msg.attachments:
-                    reply_content = "*(Attachment)*"
+                    reply_content = ErrorMessages.QUOTE_ATTACHMENT_PLACEHOLDER
             except Exception as e:
                 logger.warning(f"Failed to fetch reply reference: {e}")
 
@@ -466,7 +470,7 @@ class Fun(commands.Cog):
             await ctx.reply(file=discord_file)
         except Exception as e:
             logger.exception("Failed to generate quote card image")
-            await ctx.reply(f"{Emojis.ERROR} Failed to generate quote card image: `{e}`")
+            await ctx.reply(ErrorMessages.quote_gen_failed(str(e)))
 
 
 async def setup(bot):

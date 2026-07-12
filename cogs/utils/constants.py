@@ -55,6 +55,15 @@ class Emojis:
     ON = "<:sAI_on:1524517702041997434>"
     OFF = "<:sAI_off:1524512020945440981>"
     EDIT = "<:sAI_edit:1524892990395515022>"
+    
+    # Generic emojis
+    BRAIN = "🧠"
+    CRY = "😢"
+    FLAG = "🏳️"
+    MINUS = "➖"
+    HANDSHAKE = "🤝"
+    ARROW_LEFT = "◀"
+    ARROW_RIGHT = "▶"
 
 class ErrorMessages:
     QUOTA_REACHED = f"{Emojis.AI_FROWN} Daily AI token quota reached! Please try again tomorrow."
@@ -78,6 +87,34 @@ class ErrorMessages:
     def invalid_duration() -> str:
         return f"{Emojis.WARNING} Invalid duration. Use '30m', '1h', etc."
 
+    # Fun cog errors & text
+    TIKTOK_NO_VIDEOS = f"Could not find any videos in the collection! {Emojis.CRY}"
+    
+    @staticmethod
+    def tiktok_failed(last_error: str) -> str:
+        return f"All attempts failed. Last error: `{last_error}`"
+
+    @staticmethod
+    def tiktok_general_error(command_name: str, emoji: str, error: str) -> str:
+        return f"Something went wrong while fetching the {command_name}! {emoji}\n`{error}`"
+
+    QUOTE_MEMBER_NOT_FOUND = f"User not found.\n-# Mention the user or provide their ID."
+    QUOTE_BAD_ARGUMENT = "Please provide a message ID, a message link, or reply to a message."
+    QUOTE_LINK_FETCH_FAILED = "Could not fetch the message from the provided link. Make sure the bot has access to that channel."
+    QUOTE_ID_FETCH_FAILED = "Could not find a message with that ID in this channel."
+    QUOTE_INVALID_FORMAT = "Invalid message ID or link format."
+
+    @staticmethod
+    def quote_fetch_error(error_msg: str) -> str:
+        return f"An error occurred while fetching the message: `{error_msg}`"
+
+    @staticmethod
+    def quote_gen_failed(error_msg: str) -> str:
+        return f"{Emojis.ERROR} Failed to generate quote card image: `{error_msg}`"
+
+    QUOTE_ATTACHMENT_PLACEHOLDER = "*(Image/Attachment)*"
+    QUOTE_NO_TEXT_PLACEHOLDER = "*(No text)*"
+
 
 class SuccessMessages:
     @staticmethod
@@ -97,3 +134,13 @@ class InfoMessages:
     @staticmethod
     def usage_none(day: str) -> str:
         return f"📊 **AI Usage Today ({day})**\nNo usage recorded today."
+
+
+class DefaultSettings:
+    PREFIX = "!"
+    CBC = None
+    LLM_PRIMARY = "gemini"
+    LLM_BACKUP1 = "openai"
+    LLM_BACKUP2 = "anthropic"
+    LLM_BACKUP3 = "deepseek"
+    LLM_TIMEOUT = 15

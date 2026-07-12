@@ -308,3 +308,9 @@ class MCTSPlayer:
             cur.N += 1
             cur.Q += (outcome - cur.Q) / cur.N
             cur = cur.parent
+
+
+def run_mcts(board, iterations):
+    player = MCTSPlayer()
+    return player.choose_move(board, iterations)
+
