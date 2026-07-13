@@ -22,9 +22,8 @@ class Tools(commands.Cog):
         """Converts a YouTube video to an MP3 audio file and sends it to you."""
         await ctx.defer()
 
-        # Simple YouTube URL regex check
-        yt_regex = r"^(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)"
-        if not re.match(yt_regex, url.strip()):
+        # Loose validation to support all YouTube subdomains (m., music., etc.) and share links
+        if not ("youtube.com" in url.lower() or "youtu.be" in url.lower()):
             await ctx.reply(ErrorMessages.YT_INVALID_URL)
             return
 
