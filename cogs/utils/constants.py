@@ -115,6 +115,11 @@ class ErrorMessages:
     QUOTE_ATTACHMENT_PLACEHOLDER = "*(Image/Attachment)*"
     QUOTE_NO_TEXT_PLACEHOLDER = "*(No text)*"
 
+    # YouTube downloader errors
+    YT_INVALID_URL = f"{Emojis.WARNING} Invalid YouTube URL. Please provide a valid link."
+    YT_TOO_LONG = f"{Emojis.WARNING} Video is too long! The maximum allowed duration is 15 minutes."
+    YT_DOWNLOAD_FAILED = f"{Emojis.ERROR} Failed to download or convert the video."
+
 
 class SuccessMessages:
     @staticmethod
