@@ -153,6 +153,88 @@ class CBCSelect(ui.Select):
         except Exception:
             await interaction.response.defer()
 
+
+class LogChannelSelect(ui.Select):
+    PAGE_SIZE = 23
+
+    def __init__(self, guild, bot, selected_id=None, page=0):
+        self.bot = bot
+        self.guild = guild
+        self.page = page
+        self.selected_id = None
+        if selected_id:
+            self.selected_id = int(selected_id)
+            
+        self.channels = [c for c in guild.channels if isinstance(c, discord.TextChannel)]
+
+        options, placeholder = self._make_options()
+
+        super().__init__(placeholder=placeholder, options=options, min_values=1, max_values=1)
+
+    def _make_options(self):
+        total_channels = len(self.channels)
+        page_start = self.page * self.PAGE_SIZE
+        page_end = page_start + self.PAGE_SIZE
+        page_channels = self.channels[page_start:page_end]
+
+        options = []
+        if page_start > 0:
+            options.append(discord.SelectOption(label=f"{Emojis.ARROW_LEFT} Previous Page", value="__prev__"))
+
+        for ch in page_channels:
+            options.append(discord.SelectOption(label="# " + ch.name, value=str(ch.id)))
+
+        if page_end < total_channels:
+            options.append(discord.SelectOption(label=f"Next Page {Emojis.ARROW_RIGHT}", value="__next__"))
+
+        placeholder = "Select a logs channel..."
+        if self.selected_id:
+            selected_channel = self.guild.get_channel(self.selected_id)
+            if selected_channel is not None:
+                placeholder = "# " + selected_channel.name
+
+        return options, placeholder
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            value = self.values[0]
+        except:
+            value = None
+
+        if value in ("__prev__", "__next__"):
+            if value == "__prev__" and self.page > 0:
+                self.page -= 1
+            elif value == "__next__":
+                total = len(self.channels)
+                if (self.page + 1) * self.PAGE_SIZE < total:
+                    self.page += 1
+
+            new_options, new_placeholder = self._make_options()
+            self.options = new_options
+            self.placeholder = new_placeholder
+            try:
+                await interaction.response.edit_message(view=self.view)
+            except Exception:
+                await interaction.response.defer()
+            return
+
+        try:
+            selected = int(value)
+        except Exception:
+            await interaction.response.defer()
+            return
+
+        # UPDATE DATABASE
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "log_channel", selected)
+
+        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC, "log_channel": DefaultSettings.LOG_CHANNEL})["log_channel"] = selected
+        self.selected_id = selected
+        self.options, self.placeholder = self._make_options()
+        try:
+            await interaction.response.edit_message(view=self.view)
+        except Exception:
+            await interaction.response.defer()
+
         
 
 
@@ -267,6 +349,32 @@ class SettingsContainer(ui.Container):
         self.add_item(pipeline_section)
         ################
 
+        self.add_item(ui.Separator())
+
+        ################
+        # LOGS CHANNEL SECTION
+        log_channel = self.guild_settings.get("log_channel") if self.guild_settings else None
+        log_state = "off" if log_channel is None else "on"
+        
+        log_textdisplay = ui.TextDisplay(
+            f"**Logs Channel**\n"
+            f"-# The channel where server edits and deletions are automatically logged."
+        )
+        log_button = ui.Button(emoji=Emojis.ON if log_state == "on" else Emojis.OFF, style=discord.ButtonStyle.gray)
+        log_button.callback = self.log_toggle
+        log_section = ui.Section(log_textdisplay, accessory=log_button)
+        self.add_item(log_section)
+        ################
+
+        ################
+        # LOGS CHANNEL SELECT (paginated inside select)
+        if log_channel is not None:
+            log_select = LogChannelSelect(guild=self.guild, bot=self.bot, selected_id=log_channel)
+            log_actionrow = ui.ActionRow()
+            log_actionrow.add_item(log_select)
+            self.add_item(log_actionrow)
+        ################
+
 
     async def prefix_change(self, interaction: discord.Interaction):
         prefix = self.guild_settings.get("prefix", "!")
@@ -302,6 +410,36 @@ class SettingsContainer(ui.Container):
         self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["cbc"] = new_cbc
         if self.guild_settings is not None:
             self.guild_settings["cbc"] = new_cbc
+
+        view = self.view
+        view._main_menu_view()
+
+        await interaction.response.edit_message(view=view)
+
+
+    async def log_toggle(self, interaction: discord.Interaction):
+        current_log = self.guild_settings.get("log_channel") if self.guild_settings else None
+
+        if current_log is None:
+            default = None
+            for ch in self.guild.channels:
+                if isinstance(ch, discord.TextChannel):
+                    default = ch.id
+                    break
+
+            if default is None:
+                await interaction.response.send_message("No text channel available to enable logs channel.", ephemeral=True)
+                return
+            new_log = default
+        else:
+            new_log = None
+
+        # UPDATE DATABASE
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "log_channel", new_log)
+
+        self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC, "log_channel": DefaultSettings.LOG_CHANNEL})["log_channel"] = new_log
+        if self.guild_settings is not None:
+            self.guild_settings["log_channel"] = new_log
 
         view = self.view
         view._main_menu_view()

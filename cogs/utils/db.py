@@ -23,7 +23,7 @@ class DatabaseManager:
                 "CREATE TABLE IF NOT EXISTS ai_usage (day TEXT PRIMARY KEY, request_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0)"
             )
             await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'openai', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15)"
+                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, log_channel INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'openai', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15)"
             )
             await self.db.commit()
 
@@ -48,6 +48,10 @@ class DatabaseManager:
                 logger.info("Migration: Adding llm_backup3 column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_backup3 TEXT NOT NULL DEFAULT 'deepseek'")
                 migrated = True
+            if "log_channel" not in columns:
+                logger.info("Migration: Adding log_channel column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN log_channel INTEGER")
+                migrated = True
             if "llm_timeout" not in columns:
                 logger.info("Migration: Adding llm_timeout column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_timeout INTEGER NOT NULL DEFAULT 15")
@@ -62,7 +66,7 @@ class DatabaseManager:
         """Fetches all guild settings from the database during bot startup."""
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "SELECT guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout "
+                "SELECT guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, log_channel "
                 "FROM guild_settings"
             )
             return await cursor.fetchall()
@@ -71,12 +75,13 @@ class DatabaseManager:
         """Inserts default settings for a newly joined or unconfigured guild."""
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, log_channel, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     guild_id, 
                     DefaultSettings.PREFIX, 
                     DefaultSettings.CBC, 
+                    DefaultSettings.LOG_CHANNEL, 
                     DefaultSettings.LLM_PRIMARY, 
                     DefaultSettings.LLM_BACKUP1, 
                     DefaultSettings.LLM_BACKUP2, 
@@ -89,7 +94,7 @@ class DatabaseManager:
     async def update_guild_setting(self, guild_id: int, key: str, value) -> None:
         """Updates a specific guild setting column dynamically."""
         allowed_keys = {
-            "prefix", "cbc", "llm_primary", "llm_backup1", 
+            "prefix", "cbc", "log_channel", "llm_primary", "llm_backup1", 
             "llm_backup2", "llm_backup3", "llm_timeout"
         }
         if key not in allowed_keys:

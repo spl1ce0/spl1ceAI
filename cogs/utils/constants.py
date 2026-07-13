@@ -139,6 +139,7 @@ class InfoMessages:
 class DefaultSettings:
     PREFIX = "!"
     CBC = None
+    LOG_CHANNEL = None
     LLM_PRIMARY = "gemini"
     LLM_BACKUP1 = "openai"
     LLM_BACKUP2 = "anthropic"
