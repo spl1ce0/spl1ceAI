@@ -270,24 +270,6 @@ class AI(commands.Cog):
         self.active_summons[ctx.channel.id] = {'expiry': expiry, 'tokens': 0}
         time_str = discord.utils.format_dt(datetime.datetime.fromtimestamp(expiry), style='R')
         await ctx.reply(SuccessMessages.summon_success(time_str))
-
-    @commands.group(name="stats", invoke_without_command=True)
-    async def stats_group(self, ctx):
-        """AI related statistics."""
-        pass
-
-    @stats_group.command(name="usage")
-    async def usage(self, ctx):
-        """Shows today's AI usage statistics."""
-        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        usage = await self.bot.db_manager.get_daily_usage(today)
-        if usage:
-            in_tok, out_tok, reqs = usage
-            total = in_tok + out_tok
-            await ctx.reply(InfoMessages.usage_stats(today, reqs, total, self.DAILY_TOKEN_LIMIT, in_tok, out_tok))
-        else:
-            await ctx.reply(InfoMessages.usage_none(today))
-
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
