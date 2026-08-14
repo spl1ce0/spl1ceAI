@@ -788,7 +788,7 @@ class Settings(commands.Cog):
 
     @commands.hybrid_command(name="settings", aliases=["config"])
     @commands.guild_only()
-    #@commands.has_permissions(administrator=True)
+    # @commands.has_permissions(administrator=True)
     async def settings(self, ctx):
         guild_id = ctx.guild.id
         if guild_id not in self.bot.settings_cache:
