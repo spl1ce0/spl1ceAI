@@ -21,4 +21,3 @@ anthropic
 xai-sdk
 pilmoji
 psutil
-discord
