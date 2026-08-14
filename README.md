@@ -15,7 +15,7 @@
 
 ## 📖 About
 
-**spl1ceAI** is a self-hosted Discord bot designed to make chatting with AI seamless in your server.
+**spl1ceAI** is a self-hostable Discord bot designed to make chatting with AI seamless in your server.
 
 Instead of relying on a single API that might go down or hit rate limits, it uses an automatic failover system across multiple providers (Gemini, OpenAI, Claude, and Grok). If your primary model is busy or down, it instantly falls back to the next one without interrupting the conversation.
 
@@ -78,6 +78,21 @@ python3 bot.py
 
 ---
 
+## 🤝 Contributing
+
+Contributions, bug reports, and feature suggestions are always welcome!
+
+1. **Fork the repo** and create your branch (`git checkout -b feature/cool-feature`).
+2. **Make your changes** and verify they work cleanly.
+3. **Commit your changes** (`git commit -m 'feat: add cool feature'`).
+4. **Push to your branch** (`git push origin feature/cool-feature`).
+5. **Open a Pull Request**.
+
+Feel free to open an **Issue** if you spot a bug or have an idea for a new feature.
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+
