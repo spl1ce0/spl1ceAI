@@ -20,3 +20,4 @@ openai
 anthropic
 xai-sdk
 pilmoji
+psutil
