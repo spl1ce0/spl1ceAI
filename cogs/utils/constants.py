@@ -150,3 +150,5 @@ class DefaultSettings:
     LLM_BACKUP2 = "anthropic"
     LLM_BACKUP3 = "deepseek"
     LLM_TIMEOUT = 15
+    SHOW_MODEL = 1
+    REPLY_PING = 1

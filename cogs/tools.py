@@ -7,9 +7,42 @@ import logging
 import yt_dlp
 import discord
 from discord.ext import commands
+from discord import ui
 from cogs.utils.constants import Emojis, ErrorMessages
 
 logger = logging.getLogger(__name__)
+
+
+class ToolLayoutView(ui.LayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+
+class AvatarContainer(ui.Container):
+    def __init__(self, member: discord.Member):
+        super().__init__()
+        self.accent_color = discord.Color.blurple()
+        
+        self.add_item(ui.TextDisplay("### 👤 User Avatar"))
+        self.add_item(ui.Separator())
+        
+        details_text = (
+            f"**User:** {member.mention}\n"
+            f"**Username:** `{member.name}`\n"
+            f"**ID:** `{member.id}`"
+        )
+        details_display = ui.TextDisplay(details_text)
+        avatar_thumbnail = ui.Thumbnail(media=member.display_avatar.url)
+        
+        avatar_section = ui.Section(details_display, accessory=avatar_thumbnail)
+        self.add_item(avatar_section)
+        self.add_item(ui.Separator())
+        
+        action_row = ui.ActionRow()
+        link_button = ui.Button(label="Open High-Res Avatar", url=member.display_avatar.url, style=discord.ButtonStyle.link)
+        action_row.add_item(link_button)
+        self.add_item(action_row)
+
 
 class Tools(commands.Cog):
     def __init__(self, bot):
@@ -93,6 +126,18 @@ class Tools(commands.Cog):
         finally:
             # Cleanup temp directory
             await asyncio.to_thread(shutil.rmtree, tmpdir, ignore_errors=True)
+
+    @commands.hybrid_command(name="avatar", aliases=["av", "pfp"])
+    @commands.guild_only()
+    async def avatar(self, ctx, member: discord.Member = None):
+        """Displays the avatar of a user in a clean V2 system card."""
+        member = member or ctx.author
+        
+        view = ToolLayoutView()
+        container = AvatarContainer(member)
+        view.add_item(container)
+        
+        await ctx.reply(view=view)
 
 async def setup(bot):
     await bot.add_cog(Tools(bot))

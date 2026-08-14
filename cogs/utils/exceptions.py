@@ -27,3 +27,7 @@ class AISafetyBlockedError(AIError):
 class AIConfigurationError(AIError):
     """Raised when AI provider keys or settings are missing/invalid."""
     pass
+
+class AIQuotaReachedError(AIError):
+    """Raised when the bot's daily token quota is reached."""
+    pass

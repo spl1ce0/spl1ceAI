@@ -72,7 +72,9 @@ class Spl1ceAI(commands.AutoShardedBot):
                 "llm_backup2": row[5],
                 "llm_backup3": row[6],
                 "llm_timeout": row[7],
-                "log_channel": row[8]
+                "log_channel": row[8],
+                "show_model": row[9],
+                "reply_ping": row[10]
             }
 
         for extension in self.initial_extensions:
@@ -116,7 +118,9 @@ class Spl1ceAI(commands.AutoShardedBot):
                     "llm_backup2": DefaultSettings.LLM_BACKUP2,
                     "llm_backup3": DefaultSettings.LLM_BACKUP3,
                     "llm_timeout": DefaultSettings.LLM_TIMEOUT,
-                    "log_channel": DefaultSettings.LOG_CHANNEL
+                    "log_channel": DefaultSettings.LOG_CHANNEL,
+                    "show_model": DefaultSettings.SHOW_MODEL,
+                    "reply_ping": DefaultSettings.REPLY_PING
                 }
 
 
@@ -131,7 +135,9 @@ class Spl1ceAI(commands.AutoShardedBot):
             "llm_backup2": DefaultSettings.LLM_BACKUP2,
             "llm_backup3": DefaultSettings.LLM_BACKUP3,
             "llm_timeout": DefaultSettings.LLM_TIMEOUT,
-            "log_channel": DefaultSettings.LOG_CHANNEL
+            "log_channel": DefaultSettings.LOG_CHANNEL,
+            "show_model": DefaultSettings.SHOW_MODEL,
+            "reply_ping": DefaultSettings.REPLY_PING
         }
 
     async def close(self) -> None:
@@ -188,7 +194,7 @@ async def main():
         # intents
         intents = discord.Intents.default()
         intents.message_content = True
-        exts = ["cogs.games", "cogs.dev", "cogs.fun", "cogs.ai", "cogs.settings", "cogs.logs", "cogs.tools"]
+        exts = ["cogs.games", "cogs.dev", "cogs.fun", "cogs.ai", "cogs.settings", "cogs.logs", "cogs.tools", "cogs.errors", "cogs.analytics"]
 
         async with Spl1ceAI(
             # db_pool=pool,
