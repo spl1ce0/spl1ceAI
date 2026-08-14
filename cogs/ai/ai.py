@@ -200,28 +200,42 @@ class OpenAIModel(Model):
         openai_contents = []
         for item in contents:
             if isinstance(item, str):
-                text_type = "input_text" if is_responses_api else "text"
-                openai_contents.append({"type": text_type, "text": item})
+                if item and item.strip():
+                    text_type = "input_text" if is_responses_api else "text"
+                    openai_contents.append({"type": text_type, "text": item})
             elif hasattr(item, 'inline_data') and item.inline_data:
                 img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
                 mime_type = item.inline_data.mime_type
-                img_type = "input_image" if is_responses_api else "image_url"
-                openai_contents.append({
-                    "type": img_type,
-                    "image_url": {
-                        "url": f"data:{mime_type};base64,{img_base64}"
-                    }
-                })
+                if is_responses_api:
+                    openai_contents.append({
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{img_base64}"
+                    })
+                else:
+                    openai_contents.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{img_base64}"
+                        }
+                    })
             elif isinstance(item, dict) and "data" in item:
                 img_base64 = base64.b64encode(item["data"]).decode('utf-8')
                 mime_type = item.get("mime_type", "image/jpeg")
-                img_type = "input_image" if is_responses_api else "image_url"
-                openai_contents.append({
-                    "type": img_type,
-                    "image_url": {
-                        "url": f"data:{mime_type};base64,{img_base64}"
-                    }
-                })
+                if is_responses_api:
+                    openai_contents.append({
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{img_base64}"
+                    })
+                else:
+                    openai_contents.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{img_base64}"
+                        }
+                    })
+        if not openai_contents:
+            text_type = "input_text" if is_responses_api else "text"
+            openai_contents.append({"type": text_type, "text": "Analyze this."})
         messages.append({"role": "user", "content": openai_contents})
         return messages
 
@@ -568,7 +582,8 @@ class ModelManager:
                 continue
             self.models[name] = model_class(name, config, self.clients, default_instruction=default_inst)
 
-    async def execute_pipeline(self, model_names: list, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def execute(self, guild_settings: dict, contents: list) -> AIResponse:
+        """Consolidates fallback settings resolution and pipeline execution logic."""
         from cogs.utils.exceptions import (
             AIError,
             AIRateLimitError,
@@ -576,6 +591,30 @@ class ModelManager:
             AISafetyBlockedError,
             AIConfigurationError
         )
+        
+        raw_stack = [
+            guild_settings.get("llm_primary", "gemini-flash-lite-latest"),
+            guild_settings.get("llm_backup1", "gpt-5.4-mini"),
+            guild_settings.get("llm_backup2", "claude-haiku-4-5-20251001")
+        ]
+        
+        legacy_map = {
+            "gemini": "gemini-flash-lite-latest",
+            "openai": "gpt-5.4-mini",
+            "anthropic": "claude-haiku-4-5-20251001",
+            "grok": "grok-4.3"
+        }
+        
+        model_names = []
+        for provider in raw_stack:
+            if provider and provider != "disabled":
+                mapped = legacy_map.get(provider, provider)
+                model_names.append(mapped)
+                
+        if not model_names:
+            model_names = ["gemini-flash-lite-latest"]
+            
+        timeout = float(guild_settings.get("llm_timeout", 15))
         
         last_exception = None
         for name in model_names:
@@ -609,6 +648,7 @@ class ModelManager:
 
 class ContextManager:
     """Formats chat transcripts and extracts file attachments as raw bytes."""
+    HISTORY_ATTACHMENT_LIMIT = 3
     
     @staticmethod
     def _is_image(attachment: discord.Attachment) -> bool:
@@ -616,6 +656,20 @@ class ContextManager:
             return attachment.content_type.startswith("image/")
         filename = attachment.filename.lower()
         return filename.endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.bmp'))
+
+    @staticmethod
+    def _is_text_file(attachment: discord.Attachment) -> bool:
+        if attachment.content_type:
+            if attachment.content_type.startswith("text/"):
+                return True
+            if attachment.content_type in ["application/json", "application/javascript"]:
+                return True
+        filename = attachment.filename.lower()
+        text_extensions = (
+            '.txt', '.py', '.js', '.ts', '.json', '.csv', '.md', '.html', 
+            '.css', '.yml', '.yaml', '.ini', '.xml', '.log', '.sh', '.bat', '.sql'
+        )
+        return filename.endswith(text_extensions)
 
     @staticmethod
     def _get_mime_type(attachment: discord.Attachment) -> str:
@@ -673,33 +727,68 @@ class ContextManager:
         return result
 
     @classmethod
-    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str) -> list:
+    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str, slash_attachments: list = None) -> list:
         contents = []
+        processed_ids = set()
         
-        # 1. Read message attachments
-        for att in message.attachments:
+        # 1. Gather all attachments to inspect
+        attachments_to_read = []
+        
+        # Add slash command parameters
+        if slash_attachments:
+            attachments_to_read.extend(slash_attachments)
+            
+        # Add trigger message attachments
+        if message and message.attachments:
+            attachments_to_read.extend(message.attachments)
+            
+        # Add referenced reply message attachments
+        if message and message.reference and message.reference.message_id:
+            try:
+                ref_msg = message.reference.resolved
+                if not ref_msg or isinstance(ref_msg, discord.DeletedReferencedMessage):
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                if ref_msg and ref_msg.attachments:
+                    attachments_to_read.extend(ref_msg.attachments)
+            except Exception as e:
+                logger.error(f"Failed to resolve reply reference: {e}")
+                
+        # Add attachments from the last N history messages (Smart Limit)
+        recent_history = history[-cls.HISTORY_ATTACHMENT_LIMIT:] if history else []
+        for h_msg in recent_history:
+            if h_msg.attachments:
+                attachments_to_read.extend(h_msg.attachments)
+
+        # 2. Process gathered attachments (de-duplicating by ID)
+        for att in attachments_to_read:
+            att_id = getattr(att, "id", None)
+            if att_id:
+                if att_id in processed_ids:
+                    continue
+                processed_ids.add(att_id)
+            
+            # Case A: Image attachment
             if cls._is_image(att):
                 try:
                     img_bytes = await att.read()
                     contents.append({"data": img_bytes, "mime_type": cls._get_mime_type(att)})
                 except Exception as e:
-                    logger.error(f"Failed to read message attachment image: {e}")
-
-        # 2. Check reply attachments
-        if message.reference and message.reference.message_id:
-            try:
-                ref_msg = message.reference.resolved
-                if not ref_msg or isinstance(ref_msg, discord.DeletedReferencedMessage):
-                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
-                
-                if ref_msg:
-                    for att in ref_msg.attachments:
-                        if cls._is_image(att):
-                            img_bytes = await att.read()
-                            contents.append({"data": img_bytes, "mime_type": cls._get_mime_type(att)})
-            except Exception as e:
-                logger.error(f"Failed to read reply referenced image: {e}")
-                
+                    logger.error(f"Failed to read image attachment {att.filename}: {e}")
+                    
+            # Case B: Text / Code attachment (.py, .txt, .json, etc.)
+            elif cls._is_text_file(att):
+                try:
+                    file_bytes = await att.read()
+                    file_text = file_bytes.decode('utf-8', errors='ignore')
+                    # Prepend/append text file context directly to prompt
+                    contents.append(
+                        f"\n--- Attached File Context: {att.filename} ---\n"
+                        f"{file_text}\n"
+                        f"--------------------------------------------\n"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to read text attachment {att.filename}: {e}")
+                    
         # 3. Add the formatted context and prompt
         formatted_history = cls.format_history(history)
         full_prompt = f"Recent Chat:\n{formatted_history}\n\n{prompt}"
@@ -709,8 +798,8 @@ class ContextManager:
 
 class ResponseHandler:
     """Manages output formatting, message-splitting, and Discord reply delivery."""
-    def __init__(self):
-        pass
+    def __init__(self, bot=None):
+        self.bot = bot
 
     async def orchestrate_reply(self, message_or_ctx, response: AIResponse):
         if response.text and "[IGNORE]" in response.text:
@@ -718,7 +807,17 @@ class ResponseHandler:
             return
             
         clean_text = response.text
-        if clean_text and response.model_name:
+        
+        # Check show_model and reply_ping settings
+        show_model = 1
+        reply_ping = True
+        guild_id = message_or_ctx.guild.id if getattr(message_or_ctx, 'guild', None) else None
+        if self.bot and guild_id:
+            guild_settings = self.bot.settings_cache.get(guild_id, {})
+            show_model = guild_settings.get("show_model", 1)
+            reply_ping = guild_settings.get("reply_ping", 1) == 1
+
+        if clean_text and response.model_name and show_model == 1:
             clean_text = f"{clean_text}\n-# {response.model_name}"
         file = None
         if response.image_bytes:
@@ -741,11 +840,11 @@ class ResponseHandler:
                         await message_or_ctx.channel.send(file=file)
             else:
                 if is_ctx:
-                    await message_or_ctx.reply(clean_text, file=file)
+                    await message_or_ctx.reply(clean_text, file=file, mention_author=reply_ping)
                 else:
-                    await message_or_ctx.reply(clean_text, file=file)
+                    await message_or_ctx.reply(clean_text, file=file, mention_author=reply_ping)
         elif file:
             if is_ctx:
-                await message_or_ctx.reply(file=file)
+                await message_or_ctx.reply(file=file, mention_author=reply_ping)
             else:
-                await message_or_ctx.reply(file=file)
+                await message_or_ctx.reply(file=file, mention_author=reply_ping)

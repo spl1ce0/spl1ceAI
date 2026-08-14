@@ -304,7 +304,7 @@ class SettingsContainer(ui.Container):
             self.add_item(cbc_actionrow)
         ################
 
-        self.add_item(ui.Separator())
+        # self.add_item(ui.Separator())
 
         ################
         # AI PIPELINE SECTION
@@ -375,6 +375,40 @@ class SettingsContainer(ui.Container):
             self.add_item(log_actionrow)
         ################
 
+        self.add_item(ui.Separator())
+
+        ################
+        # SHOW MODEL NAME SECTION
+        show_model = self.guild_settings.get("show_model", 1)
+        show_state = "on" if show_model == 1 else "off"
+        
+        show_textdisplay = ui.TextDisplay(
+            f"**Display Model Name**\n"
+            f"-# Display the name of the active AI model as subtext on its replies."
+        )
+        show_button = ui.Button(emoji=Emojis.ON if show_state == "on" else Emojis.OFF, style=discord.ButtonStyle.gray)
+        show_button.callback = self.show_model_toggle
+        show_section = ui.Section(show_textdisplay, accessory=show_button)
+        self.add_item(show_section)
+        ################
+
+        self.add_item(ui.Separator())
+
+        ################
+        # REPLY PING SECTION
+        reply_ping = self.guild_settings.get("reply_ping", 1)
+        ping_state = "on" if reply_ping == 1 else "off"
+        
+        ping_textdisplay = ui.TextDisplay(
+            f"**Reply Ping**\n"
+            f"-# Mention the user when replying to their message."
+        )
+        ping_button = ui.Button(emoji=Emojis.ON if ping_state == "on" else Emojis.OFF, style=discord.ButtonStyle.gray)
+        ping_button.callback = self.reply_ping_toggle
+        ping_section = ui.Section(ping_textdisplay, accessory=ping_button)
+        self.add_item(ping_section)
+        ################
+
 
     async def prefix_change(self, interaction: discord.Interaction):
         prefix = self.guild_settings.get("prefix", "!")
@@ -440,6 +474,40 @@ class SettingsContainer(ui.Container):
         self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC, "log_channel": DefaultSettings.LOG_CHANNEL})["log_channel"] = new_log
         if self.guild_settings is not None:
             self.guild_settings["log_channel"] = new_log
+
+        view = self.view
+        view._main_menu_view()
+
+        await interaction.response.edit_message(view=view)
+        
+
+    async def show_model_toggle(self, interaction: discord.Interaction):
+        current_show = self.guild_settings.get("show_model", 1)
+        new_show = 0 if current_show == 1 else 1
+
+        # UPDATE DATABASE
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "show_model", new_show)
+
+        self.bot.settings_cache.setdefault(self.guild.id, {})["show_model"] = new_show
+        if self.guild_settings is not None:
+            self.guild_settings["show_model"] = new_show
+
+        view = self.view
+        view._main_menu_view()
+
+        await interaction.response.edit_message(view=view)
+        
+
+    async def reply_ping_toggle(self, interaction: discord.Interaction):
+        current_ping = self.guild_settings.get("reply_ping", 1)
+        new_ping = 0 if current_ping == 1 else 1
+
+        # UPDATE DATABASE
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "reply_ping", new_ping)
+
+        self.bot.settings_cache.setdefault(self.guild.id, {})["reply_ping"] = new_ping
+        if self.guild_settings is not None:
+            self.guild_settings["reply_ping"] = new_ping
 
         view = self.view
         view._main_menu_view()
