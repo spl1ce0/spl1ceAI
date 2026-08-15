@@ -21,3 +21,4 @@ anthropic
 xai-sdk
 pilmoji
 psutil
+matplotlib
