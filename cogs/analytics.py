@@ -34,6 +34,26 @@ class Analytics(commands.Cog):
             logger.error(f"Failed to log guild leave event: {e}")
 
     @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Logs message activity to activity_heatmap_telemetry for peak hour analysis."""
+        if not message.guild or not message.channel:
+            return
+
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        hour_str = f"{now_dt.hour:02d}:00 - {(now_dt.hour + 1) % 24:02d}:00 UTC"
+        is_bot = message.author.bot
+
+        try:
+            await self.bot.db_manager.log_heatmap_activity(
+                guild_id=message.guild.id,
+                channel_id=message.channel.id,
+                hour_bucket=hour_str,
+                is_bot_response=is_bot
+            )
+        except Exception as e:
+            logger.error(f"Failed to log heatmap telemetry: {e}")
+
+    @commands.Cog.listener()
     async def on_command(self, ctx: commands.Context):
         """Records command start time to calculate execution latency."""
         ctx.telemetry_start_time = time.perf_counter()

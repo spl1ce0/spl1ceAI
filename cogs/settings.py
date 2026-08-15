@@ -25,9 +25,11 @@ class PrefixModal(ui.Modal, title="Change Server Prefix"):
 
     async def on_submit(self, interaction: discord.Interaction):
         new_prefix = self.prefix_input.value
+        old_prefix = self.view.bot.settings_cache.get(self.guild_id, {}).get("prefix", DefaultSettings.PREFIX)
         
         # Save prefix to database
         await self.view.bot.db_manager.update_guild_setting(self.guild_id, "prefix", new_prefix)
+        await self.view.bot.db_manager.log_settings_change(self.guild_id, interaction.user.id, "prefix", str(old_prefix), str(new_prefix))
 
         self.view.bot.settings_cache.setdefault(self.guild_id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["prefix"] = new_prefix
         self.view.guild_settings = self.view.bot.settings_cache[self.guild_id]
@@ -61,7 +63,9 @@ class TimeoutModal(ui.Modal, title="Change Model Timeout"):
             await interaction.response.send_message(f"❌ Invalid input: {e}", ephemeral=True)
             return
             
+        old_timeout = self.view.bot.settings_cache.get(self.guild_id, {}).get("llm_timeout", 15)
         await self.view.bot.db_manager.update_guild_setting(self.guild_id, "llm_timeout", new_timeout)
+        await self.view.bot.db_manager.log_settings_change(self.guild_id, interaction.user.id, "llm_timeout", str(old_timeout), str(new_timeout))
 
         self.view.bot.settings_cache.setdefault(self.guild_id, {})["llm_timeout"] = new_timeout
         self.view.guild_settings["llm_timeout"] = new_timeout
@@ -142,8 +146,10 @@ class CBCSelect(ui.Select):
             await interaction.response.defer()
             return
 
+        old_cbc = self.bot.settings_cache.get(self.guild.id, {}).get("cbc")
         # UPDATE DATABASE
         await self.bot.db_manager.update_guild_setting(self.guild.id, "cbc", selected)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "cbc", str(old_cbc), str(selected))
 
         self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["cbc"] = selected
         self.selected_id = selected
@@ -224,8 +230,10 @@ class LogChannelSelect(ui.Select):
             await interaction.response.defer()
             return
 
+        old_log = self.bot.settings_cache.get(self.guild.id, {}).get("log_channel")
         # UPDATE DATABASE
         await self.bot.db_manager.update_guild_setting(self.guild.id, "log_channel", selected)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "log_channel", str(old_log), str(selected))
 
         self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC, "log_channel": DefaultSettings.LOG_CHANNEL})["log_channel"] = selected
         self.selected_id = selected
@@ -438,8 +446,10 @@ class SettingsContainer(ui.Container):
         else:
             new_cbc = None
 
+        old_cbc = self.guild_settings.get("cbc") if self.guild_settings else None
         # UPDATE DATABASE
         await self.bot.db_manager.update_guild_setting(self.guild.id, "cbc", new_cbc)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "cbc", str(old_cbc), str(new_cbc))
 
         self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC})["cbc"] = new_cbc
         if self.guild_settings is not None:
@@ -468,8 +478,10 @@ class SettingsContainer(ui.Container):
         else:
             new_log = None
 
+        old_log = current_log
         # UPDATE DATABASE
         await self.bot.db_manager.update_guild_setting(self.guild.id, "log_channel", new_log)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "log_channel", str(old_log), str(new_log))
 
         self.bot.settings_cache.setdefault(self.guild.id, {"prefix": DefaultSettings.PREFIX, "cbc": DefaultSettings.CBC, "log_channel": DefaultSettings.LOG_CHANNEL})["log_channel"] = new_log
         if self.guild_settings is not None:
@@ -487,6 +499,7 @@ class SettingsContainer(ui.Container):
 
         # UPDATE DATABASE
         await self.bot.db_manager.update_guild_setting(self.guild.id, "show_model", new_show)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "show_model", str(current_show), str(new_show))
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["show_model"] = new_show
         if self.guild_settings is not None:
@@ -504,6 +517,7 @@ class SettingsContainer(ui.Container):
 
         # UPDATE DATABASE
         await self.bot.db_manager.update_guild_setting(self.guild.id, "reply_ping", new_ping)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "reply_ping", str(current_ping), str(new_ping))
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["reply_ping"] = new_ping
         if self.guild_settings is not None:
@@ -660,8 +674,10 @@ class PrimarySelect(ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         selected = self.values[0]
+        old_primary = self.bot.settings_cache.get(self.guild.id, {}).get("llm_primary", "gemini-flash-lite-latest")
         
         await self.bot.db_manager.update_guild_setting(self.guild.id, "llm_primary", selected)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "llm_primary", str(old_primary), str(selected))
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["llm_primary"] = selected
         self.view.guild_settings["llm_primary"] = selected
@@ -713,8 +729,10 @@ class Backup1Select(ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         selected = self.values[0]
+        old_backup1 = self.bot.settings_cache.get(self.guild.id, {}).get("llm_backup1", "gpt-5.4-mini")
         
         await self.bot.db_manager.update_guild_setting(self.guild.id, "llm_backup1", selected)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "llm_backup1", str(old_backup1), str(selected))
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["llm_backup1"] = selected
         self.view.guild_settings["llm_backup1"] = selected
@@ -766,8 +784,10 @@ class Backup2Select(ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         selected = self.values[0]
+        old_backup2 = self.bot.settings_cache.get(self.guild.id, {}).get("llm_backup2", "claude-haiku-4-5-20251001")
         
         await self.bot.db_manager.update_guild_setting(self.guild.id, "llm_backup2", selected)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "llm_backup2", str(old_backup2), str(selected))
 
         self.bot.settings_cache.setdefault(self.guild.id, {})["llm_backup2"] = selected
         self.view.guild_settings["llm_backup2"] = selected

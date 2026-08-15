@@ -9,6 +9,7 @@ import discord
 import logging
 import datetime
 import asyncio
+import time
 from random import randint
 from concurrent.futures import ProcessPoolExecutor
 
@@ -577,12 +578,16 @@ class CFView(ui.LayoutView):
     CF_EMOJI = Emojis.C4_LOGO
     
 
-    def __init__(self, author_id, bot, *, timeout = None):
+    def __init__(self, author_id, bot, guild_id=None, channel_id=None, *, timeout = None):
         super().__init__(timeout=timeout)
         
         self.bot = bot
         self.game = None
         self.author_id = author_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.game_start_time = None
+        self.telemetry_logged = False
         self.red_player_id = None
         self.yellow_player_id = None
         self.bot_id = bot.user.id
@@ -636,6 +641,8 @@ class CFView(ui.LayoutView):
 
 
     def assign_players(self, player1_id, player2_id):
+        self.game_start_time = time.time()
+        self.telemetry_logged = False
 
         if randint(0, 1) == 0:
             self.red_player_id = player1_id
@@ -697,6 +704,29 @@ class CFView(ui.LayoutView):
         """
         Swaps the view to the end game container.
         """
+        if not self.telemetry_logged and self.game:
+            self.telemetry_logged = True
+            turns = sum(self.game.heights)
+            duration = int(time.time() - self.game_start_time) if self.game_start_time else 0
+            if self.game.status == self.game.RED_WIN:
+                winner_id = self.red_player_id
+            elif self.game.status == self.game.YELLOW_WIN:
+                winner_id = self.yellow_player_id
+            else:
+                winner_id = None
+
+            asyncio.create_task(
+                self.bot.db_manager.log_game_match(
+                    guild_id=self.guild_id,
+                    channel_id=self.channel_id,
+                    game_name="connect4",
+                    player1_id=self.red_player_id,
+                    player2_id=self.yellow_player_id,
+                    winner_id=winner_id,
+                    turns_count=turns,
+                    duration_seconds=duration
+                )
+            )
 
         end_container = CFEndContainer(
             self.red_player_id,
@@ -794,7 +824,13 @@ class Games(commands.Cog):
         Starts a Connect Four game.
         """
 
-        view = CFView(ctx.author.id, ctx.bot, timeout=None)
+        view = CFView(
+            ctx.author.id,
+            ctx.bot,
+            guild_id=ctx.guild.id if ctx.guild else None,
+            channel_id=ctx.channel.id,
+            timeout=None
+        )
 
         await ctx.reply(view=view)
 

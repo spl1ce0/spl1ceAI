@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 import logging
 import datetime
@@ -135,11 +136,38 @@ class AI(commands.Cog):
 
         prompt = f"Summarize the following Discord conversation concisely. Use bullet points for key topics. Keep it brief and avoid unnecessary detail:\n\n{formatted_context}"
 
+        start_time = time.perf_counter()
         async with ctx.typing():
             guild_settings = self.bot.settings_cache.get(ctx.guild.id, {})
             response = await self.model_manager.execute(guild_settings, [prompt])
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
             
         await self.update_usage(response)
+
+        try:
+            in_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+            out_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+            await self.bot.db_manager.log_ai_transaction(
+                guild_id=ctx.guild.id if ctx.guild else None,
+                channel_id=ctx.channel.id,
+                user_id=ctx.author.id,
+                model_name=response.model_name or "unknown",
+                provider=getattr(response, "provider", "unknown") or "unknown",
+                input_tokens=in_tokens or 0,
+                output_tokens=out_tokens or 0,
+                estimated_cost=0.0,
+                latency_ms=latency_ms,
+                context_messages_count=len(message_list),
+                finish_reason="STOP",
+                trigger_type="summarize",
+                prompt_chars=len(prompt or ""),
+                response_chars=len(response.text or ""),
+                failover_occurred=getattr(response, "failover_occurred", False),
+                failover_reason=getattr(response, "failover_reason", None)
+            )
+        except Exception as log_err:
+            logger.error(f"Failed to log AI transaction telemetry: {log_err}")
+
         response.text = f"### 📝 Summary\n{response.text}"
         await self.response_orchestrator.orchestrate_reply(ctx, response)
 
@@ -168,13 +196,39 @@ class AI(commands.Cog):
 
         logger.info(f"ask command trigger: contents contains {len(contents)} items")
 
+        start_time = time.perf_counter()
         async with ctx.typing():
             guild_settings = self.bot.settings_cache.get(ctx.guild.id, {})
             response = await self.model_manager.execute(
                 guild_settings,
                 contents
             )
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
         await self.update_usage(response)
+
+        try:
+            in_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+            out_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+            await self.bot.db_manager.log_ai_transaction(
+                guild_id=ctx.guild.id if ctx.guild else None,
+                channel_id=ctx.channel.id,
+                user_id=ctx.author.id,
+                model_name=response.model_name or "unknown",
+                provider=getattr(response, "provider", "unknown") or "unknown",
+                input_tokens=in_tokens or 0,
+                output_tokens=out_tokens or 0,
+                estimated_cost=0.0,
+                latency_ms=latency_ms,
+                context_messages_count=len(message_list),
+                finish_reason="STOP",
+                trigger_type="ask_vision" if image else "ask",
+                prompt_chars=len(question or ""),
+                response_chars=len(response.text or ""),
+                failover_occurred=getattr(response, "failover_occurred", False),
+                failover_reason=getattr(response, "failover_reason", None)
+            )
+        except Exception as log_err:
+            logger.error(f"Failed to log AI transaction telemetry: {log_err}")
 
         await self.response_orchestrator.orchestrate_reply(ctx, response)
 
@@ -269,7 +323,7 @@ class AI(commands.Cog):
                 pass
         return False
 
-    async def _generate_message_reply(self, message: discord.Message, guild_id: int, channel_id: int):
+    async def _generate_message_reply(self, message: discord.Message, guild_id: int, channel_id: int, trigger_type: str = "mention"):
         async with message.channel.typing():
             try:
                 ctx = await self.bot.get_context(message)
@@ -282,13 +336,40 @@ class AI(commands.Cog):
 
                 logger.info(f"on_message trigger: contents contains {len(contents)} items")
 
+                start_time = time.perf_counter()
                 guild_settings = self.bot.settings_cache.get(guild_id, {})
                 response = await self.model_manager.execute(
                     guild_settings,
                     contents
                 )
+                latency_ms = int((time.perf_counter() - start_time) * 1000)
                 
                 await self.update_usage(response, channel_id)
+
+                try:
+                    in_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+                    out_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+                    await self.bot.db_manager.log_ai_transaction(
+                        guild_id=guild_id,
+                        channel_id=channel_id,
+                        user_id=message.author.id,
+                        model_name=response.model_name or "unknown",
+                        provider=getattr(response, "provider", "unknown") or "unknown",
+                        input_tokens=in_tokens or 0,
+                        output_tokens=out_tokens or 0,
+                        estimated_cost=0.0,
+                        latency_ms=latency_ms,
+                        context_messages_count=len(message_list),
+                        finish_reason="STOP",
+                        trigger_type=trigger_type,
+                        prompt_chars=len(message.content or ""),
+                        response_chars=len(response.text or ""),
+                        failover_occurred=getattr(response, "failover_occurred", False),
+                        failover_reason=getattr(response, "failover_reason", None)
+                    )
+                except Exception as log_err:
+                    logger.error(f"Failed to log AI transaction telemetry: {log_err}")
+
                 if channel_id in self.warning_counters:
                     self.warning_counters[channel_id]['busy'] = 0
                     self.warning_counters[channel_id]['chat_messages_since_busy_warning'] = 999
@@ -342,7 +423,7 @@ class AI(commands.Cog):
         channel_id = message.channel.id
         guild_id = message.guild.id if message.guild else None
 
-        should_respond, is_summoned, _ = await self._parse_message_triggers(message)
+        should_respond, is_summoned, is_chatbot_channel = await self._parse_message_triggers(message)
         if not should_respond:
             return
 
@@ -352,4 +433,14 @@ class AI(commands.Cog):
         if not await self._validate_quota_with_warnings(message, channel_id):
             return
 
-        await self._generate_message_reply(message, guild_id, channel_id)
+        # Determine trigger type
+        if is_summoned:
+            trigger_type = "summon"
+        elif is_chatbot_channel:
+            trigger_type = "cbc"
+        elif message.reference and message.reference.message_id:
+            trigger_type = "reply"
+        else:
+            trigger_type = "mention"
+
+        await self._generate_message_reply(message, guild_id, channel_id, trigger_type=trigger_type)

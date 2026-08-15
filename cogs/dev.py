@@ -757,7 +757,7 @@ class AnalyticsHomeContainer(ui.Container):
         # Navigation Row 2: Features & Tools
         nav_row2 = ui.ActionRow()
 
-        c4_btn = ui.Button(label="Connect 4", style=discord.ButtonStyle.gray, disabled=True)
+        c4_btn = ui.Button(label="Connect 4", style=discord.ButtonStyle.gray)
         c4_btn.callback = self._on_connect4_click
         nav_row2.add_item(c4_btn)
 
@@ -765,11 +765,11 @@ class AnalyticsHomeContainer(ui.Container):
         med_btn.callback = self._on_media_click
         nav_row2.add_item(med_btn)
 
-        aud_btn = ui.Button(label="Audits", style=discord.ButtonStyle.gray, disabled=True)
+        aud_btn = ui.Button(label="Audits", style=discord.ButtonStyle.gray)
         aud_btn.callback = self._on_audits_click
         nav_row2.add_item(aud_btn)
 
-        heat_btn = ui.Button(label="Heatmap", style=discord.ButtonStyle.gray, disabled=True)
+        heat_btn = ui.Button(label="Heatmap", style=discord.ButtonStyle.gray)
         heat_btn.callback = self._on_heatmap_click
         nav_row2.add_item(heat_btn)
 

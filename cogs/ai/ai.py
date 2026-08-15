@@ -30,12 +30,26 @@ class AIUsage:
         self.candidates_token_count = completion_tokens
 
 class AIResponse:
-    def __init__(self, text: str, prompt_tokens: int = 0, completion_tokens: int = 0, model_name: str = None, image_bytes: bytes = None, image_filename: str = None):
+    def __init__(
+        self,
+        text: str,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        model_name: str = None,
+        provider: str = None,
+        image_bytes: bytes = None,
+        image_filename: str = None,
+        failover_occurred: bool = False,
+        failover_reason: str = None
+    ):
         self.text = text
         self.usage_metadata = AIUsage(prompt_tokens, completion_tokens)
         self.model_name = model_name
+        self.provider = provider
         self.image_bytes = image_bytes
         self.image_filename = image_filename
+        self.failover_occurred = failover_occurred
+        self.failover_reason = failover_reason
 
 class Model(ABC):
     """Represents a specific configured LLM (e.g. 'gpt-5-mini')."""
@@ -82,6 +96,8 @@ class Model(ABC):
     async def query(self, contents: list, timeout: float = 15.0) -> AIResponse:
         # 1. Run provider-specific text query
         response = await self._execute_query(contents, timeout)
+        response.model_name = self.name
+        response.provider = self.provider
         
         # 2. Check for image generation tags
         if response.text:
@@ -630,6 +646,9 @@ class ModelManager:
                     model.query(contents, timeout=actual_timeout),
                     timeout=float(actual_timeout)
                 )
+                if name != model_names[0]:
+                    response.failover_occurred = True
+                    response.failover_reason = str(last_exception) if last_exception else f"Primary model '{model_names[0]}' failed"
                 return response
             except asyncio.TimeoutError as e:
                 last_exception = AIServiceUnavailableError(f"Model '{name}' timed out after {actual_timeout}s", original_error=e)

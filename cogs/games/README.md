@@ -18,3 +18,4 @@ This package provides interactive multiplayer Discord games with responsive butt
   * **PvAI (Player vs AI)**: Challenge the bot AI running Monte Carlo Tree Search (MCTS) in a background `ProcessPoolExecutor`.
 * **Interactive UI**: ActionRow button views with drop columns (`1` through `7`) and custom emojis representing pieces and the board frame.
 * **Turn & Timeout Management**: Automatic turn timer tracking, forfeit on timeout, and rematch buttons.
+* **Match Telemetry & Analytics**: Records match outcomes (winner vs loser / draw), duration in seconds, turn counts, and participant IDs to `game_telemetry`.
