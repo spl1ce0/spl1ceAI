@@ -178,7 +178,7 @@ class AI(commands.Cog):
         await ctx.defer()
         usage_data = await self.bot.db_manager.get_guild_monthly_ai_usage(ctx.guild.id)
         container = QuotaContainer(ctx.guild.name, usage_data, limit_eur=self.MONTHLY_GUILD_LIMIT_EUR)
-        view = ui.View(timeout=None)
+        view = ui.LayoutView(timeout=None)
         view.add_item(container)
         await ctx.reply(view=view)
 
