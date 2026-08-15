@@ -816,7 +816,7 @@ class ContextManager:
         return contents
 
 class ResponseHandler:
-    """Manages output formatting, message-splitting, and Discord reply delivery."""
+    """Manages output formatting, character limit enforcement, and Discord reply delivery."""
     def __init__(self, bot=None):
         self.bot = bot
 
@@ -836,34 +836,17 @@ class ResponseHandler:
             show_model = guild_settings.get("show_model", 1)
             reply_ping = guild_settings.get("reply_ping", 1) == 1
 
-        if clean_text and response.model_name and show_model == 1:
-            clean_text = f"{clean_text}\n-# {response.model_name}"
         file = None
         if response.image_bytes:
             file = discord.File(io.BytesIO(response.image_bytes), filename=response.image_filename or "generated_image.jpg")
-            
-        is_ctx = hasattr(message_or_ctx, 'send')
-        
+
         if clean_text:
-            if len(clean_text) > 2000:
-                parts = [clean_text[i:i+1900] for i in range(0, len(clean_text), 1900)]
-                for part in parts:
-                    if is_ctx:
-                        await message_or_ctx.send(part)
-                    else:
-                        await message_or_ctx.channel.send(part)
-                if file:
-                    if is_ctx:
-                        await message_or_ctx.send(file=file)
-                    else:
-                        await message_or_ctx.channel.send(file=file)
-            else:
-                if is_ctx:
-                    await message_or_ctx.reply(clean_text, file=file, mention_author=reply_ping)
-                else:
-                    await message_or_ctx.reply(clean_text, file=file, mention_author=reply_ping)
+            suffix = f"\n-# {response.model_name}" if (response.model_name and show_model == 1) else ""
+            max_body = 2000 - len(suffix)
+            if len(clean_text) > max_body:
+                clean_text = clean_text[:max_body - 3] + "..."
+            clean_text = f"{clean_text}{suffix}"
+
+            await message_or_ctx.reply(clean_text, file=file, mention_author=reply_ping)
         elif file:
-            if is_ctx:
-                await message_or_ctx.reply(file=file, mention_author=reply_ping)
-            else:
-                await message_or_ctx.reply(file=file, mention_author=reply_ping)
+            await message_or_ctx.reply(file=file, mention_author=reply_ping)

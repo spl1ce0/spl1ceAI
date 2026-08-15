@@ -740,15 +740,15 @@ class AnalyticsHomeContainer(ui.Container):
         ai_btn.callback = self._on_ai_click
         nav_row1.add_item(ai_btn)
 
-        hw_btn = ui.Button(label="Hardware", style=discord.ButtonStyle.gray, disabled=True)
+        hw_btn = ui.Button(label="Hardware", style=discord.ButtonStyle.gray)
         hw_btn.callback = self._on_hardware_click
         nav_row1.add_item(hw_btn)
 
-        cmd_btn = ui.Button(label="Commands", style=discord.ButtonStyle.gray, disabled=True)
+        cmd_btn = ui.Button(label="Commands", style=discord.ButtonStyle.gray)
         cmd_btn.callback = self._on_commands_click
         nav_row1.add_item(cmd_btn)
 
-        err_btn = ui.Button(label="Errors", style=discord.ButtonStyle.gray, disabled=True)
+        err_btn = ui.Button(label="Errors", style=discord.ButtonStyle.gray)
         err_btn.callback = self._on_errors_click
         nav_row1.add_item(err_btn)
 
@@ -760,10 +760,6 @@ class AnalyticsHomeContainer(ui.Container):
         c4_btn = ui.Button(label="Connect 4", style=discord.ButtonStyle.gray)
         c4_btn.callback = self._on_connect4_click
         nav_row2.add_item(c4_btn)
-
-        med_btn = ui.Button(label="Media", style=discord.ButtonStyle.gray, disabled=True)
-        med_btn.callback = self._on_media_click
-        nav_row2.add_item(med_btn)
 
         aud_btn = ui.Button(label="Audits", style=discord.ButtonStyle.gray)
         aud_btn.callback = self._on_audits_click
@@ -1056,11 +1052,11 @@ class AnalyticsHardwareContainer(ui.Container):
             return "█" * filled + "░" * (10 - filled)
 
         metrics_text = (
-            f"**CPU Load:** `{cpu_pct}%` `[{_bar(cpu_pct)}]`\n"
-            f"**RAM Usage:** `{ram_pct}%` (`{ram_used_mb:,}/{ram_total_mb:,} MB`) `[{_bar(ram_pct)}]`\n"
-            f"**Disk Usage:** `{disk_pct}%` (`{disk_used_gb}/{disk_total_gb} GB`) `[{_bar(disk_pct)}]`\n"
-            f"**Database Size:** `{db_size_mb} MB` (`bot.db`)\n"
-            f"**Gateway Ping:** `{ws_latency} ms`"
+            f"**CPU Load:** {cpu_pct}% [{_bar(cpu_pct)}]\n"
+            f"**RAM Usage:** {ram_pct}% ({ram_used_mb:,} / {ram_total_mb:,} MB) [{_bar(ram_pct)}]\n"
+            f"**Disk Usage:** {disk_pct}% ({disk_used_gb} / {disk_total_gb} GB) [{_bar(disk_pct)}]\n"
+            f"**Database Size:** {db_size_mb} MB (`bot.db`)\n"
+            f"**Gateway Ping:** {ws_latency} ms"
         )
         self.add_item(ui.TextDisplay(metrics_text))
         self.add_item(ui.Separator())
@@ -1103,7 +1099,7 @@ class AnalyticsErrorsContainer(ui.Container):
             type_lines.append(f"• `{etype}`: **{ecount:,}** occurrences")
         type_str = "\n".join(type_lines) if type_lines else "*No errors recorded in the last 24h.*"
 
-        self.add_item(ui.TextDisplay(f"**Total Exceptions:** `{total_24h:,}` in the last 24 hours\n\n**Top Exception Types:**\n{type_str}"))
+        self.add_item(ui.TextDisplay(f"**Total Exceptions:** {total_24h:,} in the last 24 hours\n\n**Top Exception Types:**\n{type_str}"))
         self.add_item(ui.Separator())
 
         recent_lines = []
@@ -1224,8 +1220,8 @@ class AnalyticsCommandsContainer(ui.Container):
         slash_pct = (slash_24h / total_24h * 100) if total_24h > 0 else 0.0
 
         overview_text = (
-            f"**Total Commands:** `{total_24h:,}` executions\n"
-            f"**Type Distribution:** `{slash_pct:.1f}%` Slash ({slash_24h:,}) • `{100 - slash_pct:.1f}%` Prefix ({prefix_24h:,})"
+            f"**Total Commands:** {total_24h:,} executions\n"
+            f"**Type Distribution:** {slash_pct:.1f}% Slash ({slash_24h:,}) • {100 - slash_pct:.1f}% Prefix ({prefix_24h:,})"
         )
         self.add_item(ui.TextDisplay(overview_text))
         self.add_item(ui.Separator())

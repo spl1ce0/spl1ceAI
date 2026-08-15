@@ -27,7 +27,7 @@ This package manages all Large Language Model (LLM) communications, multi-tier p
   * **Recent History Attachment Limit (`HISTORY_ATTACHMENT_LIMIT = 3`)**: Automatically scans the last 3 history messages for attachments without causing bandwidth bloat.
 
 ### 3. `ResponseHandler`
-* Manages formatting, model subtext injection (`show_model` setting), and Discord delivery.
+* Manages formatting, model subtext injection (`show_model` setting), single-message delivery (<2000 character limit enforcement without splitting), and Discord reply routing.
 * Respects server configuration flags such as author ping preferences (`reply_ping` setting).
 
 ---
