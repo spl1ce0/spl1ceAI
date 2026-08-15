@@ -23,7 +23,13 @@ This package contains shared system infrastructure, asynchronous database manage
 | **`command_telemetry`** | Execution latency and success metrics for commands. | `id`, `guild_id`, `channel_id`, `user_id`, `command_name`, `is_slash`, `execution_time_ms`, `success`, `timestamp` |
 | **`ai_telemetry`** | Granular AI request metadata, tokens, cost, and failover reasons. | `id`, `model_name`, `provider`, `input_tokens`, `output_tokens`, `estimated_cost`, `latency_ms`, `failover_occurred`, `failover_reason`, `timestamp` |
 | **`error_telemetry`** | Uncaught command and event exceptions with full tracebacks. | `id`, `guild_id`, `channel_id`, `user_id`, `command_name`, `error_type`, `error_message`, `traceback`, `timestamp` |
-| **`health_telemetry`** | Hourly hardware health metrics (CPU, RAM, Disk, bot latency). | `id`, `cpu_percent`, `ram_used_mb`, `ram_total_mb`, `disk_used_gb`, `bot_latency_ms`, `guild_count`, `active_summons_count`, `timestamp` |
+| **`system_telemetry`** | Hourly hardware health & scale metrics (CPU, RAM, Disk, bot latency, DB size, uptime, guild count, total members). | `id`, `cpu_usage_pct`, `ram_usage_pct`, `disk_usage_pct`, `websocket_latency_ms`, `sqlite_db_size_bytes`, `uptime_seconds`, `guild_count`, `total_members_count`, `timestamp` |
+| **`user_telemetry`** | User activity, first seen, and lifetime engagement. | `user_id`, `first_seen`, `last_seen`, `total_commands_run` |
+| **`guild_telemetry`** | Server join and leave event history. | `id`, `guild_id`, `event_type`, `member_count`, `timestamp` |
+| **`game_telemetry`** | Match statistics for Connect 4 matches. | `id`, `guild_id`, `channel_id`, `game_name`, `player1_id`, `player2_id`, `winner_id`, `turns_count`, `duration_seconds`, `timestamp` |
+| **`media_telemetry`** | YouTube audio download and conversion history. | `id`, `guild_id`, `user_id`, `url`, `duration_seconds`, `file_size_bytes`, `status`, `timestamp` |
+| **`settings_audit_telemetry`** | Audit trail of server configuration edits. | `id`, `guild_id`, `user_id`, `setting_key`, `old_value`, `new_value`, `timestamp` |
+| **`activity_heatmap_telemetry`** | Hourly channel message volume and bot replies. | `id`, `guild_id`, `channel_id`, `message_count`, `bot_responses`, `hour_bucket`, `timestamp` |
 
 ---
 

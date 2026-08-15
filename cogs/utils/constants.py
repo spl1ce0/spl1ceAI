@@ -56,6 +56,9 @@ class Emojis:
     OFF = "<:sAI_off:1524512020945440981>"
     EDIT = "<:sAI_edit:1524892990395515022>"
     
+    # Custom UI emojis
+    ARROW = "<:sAI_arrow:1537962369060315236>"
+    
     # Generic emojis
     BRAIN = "🧠"
     CRY = "😢"

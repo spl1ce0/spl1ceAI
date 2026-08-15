@@ -16,8 +16,8 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 
 | Cog File | Class Name | Key Commands / Listeners | Description |
 | :--- | :--- | :--- | :--- |
-| **`analytics.py`** | `Analytics` | Background loop | Collects hourly system hardware metrics (CPU, RAM, Disk, latency), guild count, and command execution stats to `health_telemetry`. |
-| **`dev.py`** | `Dev` | `!alive`, `!ext`, `!update`, `!restart`, `!commands`, `!logs` | Owner-only maintenance commands, extension hot-reloading, tree syncing, update shell script runner, and interactive log viewer (`discord.log`, `ai.log`). |
+| **`analytics.py`** | `Analytics` | Background loop | Collects 5-minute system hardware metrics (CPU, RAM, Disk, latency), guild count, and command execution stats to `system_telemetry`. |
+| **`dev.py`** | `Dev` | `!alive`, `!ext`, `!update`, `!restart`, `!commands`, `!logs`, `!analytics` | Owner-only maintenance commands, extension hot-reloading, tree syncing, update shell script runner, interactive log viewer, and interactive analytics dashboard. |
 | **`errors.py`** | `ErrorHandler` | `on_app_command_error`, `on_command_error` | Central error handler translating exceptions into user-friendly embeds/messages and recording crash telemetry in `error_telemetry`. |
 | **`fun.py`** | `Fun` | `/sealion`, `/anoomals`, `/ban`, `/quote` | Random TikTok video scrapers/downloaders (`yt-dlp`), fake ban UI container card, and dynamic image quote card generation (Pillow + Pilmoji). |
 | **`logs.py`** | `Logs` | `on_message_delete`, `on_raw_message_delete`, `on_message_edit` | Audit logging sending rich embeds to configured server `logs_channel`. |

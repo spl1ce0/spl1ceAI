@@ -67,7 +67,7 @@ class Analytics(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to log command execution telemetry: {e}")
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=5)
     async def system_telemetry_loop(self):
         """Periodically logs system health metrics to system_telemetry."""
         try:
@@ -85,13 +85,18 @@ class Analytics(commands.Cog):
             if hasattr(self.bot, "start_time"):
                 uptime_seconds = int((datetime.datetime.now(datetime.timezone.utc) - self.bot.start_time).total_seconds())
 
+            guild_cnt = len(self.bot.guilds)
+            total_members = sum(g.member_count for g in self.bot.guilds if g.member_count)
+
             await self.bot.db_manager.log_system_status(
                 cpu_usage_pct=cpu_pct,
                 ram_usage_pct=ram_pct,
                 disk_usage_pct=disk_pct,
                 websocket_latency_ms=ws_latency,
                 sqlite_db_size_bytes=db_size,
-                uptime_seconds=uptime_seconds
+                uptime_seconds=uptime_seconds,
+                guild_count=guild_cnt,
+                total_members_count=total_members
             )
         except Exception as e:
             logger.error(f"Failed to log system status telemetry: {e}")

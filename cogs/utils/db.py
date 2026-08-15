@@ -120,6 +120,8 @@ class DatabaseManager:
                 "websocket_latency_ms INTEGER, "
                 "sqlite_db_size_bytes INTEGER, "
                 "uptime_seconds INTEGER, "
+                "guild_count INTEGER DEFAULT 0, "
+                "total_members_count INTEGER DEFAULT 0, "
                 "timestamp TEXT DEFAULT CURRENT_TIMESTAMP)"
             )
             await cursor.execute(
@@ -218,6 +220,22 @@ class DatabaseManager:
                     await cursor.execute("ALTER TABLE command_telemetry ADD COLUMN success INTEGER DEFAULT 1")
                     ct_migrated = True
                 if ct_migrated:
+                    await self.db.commit()
+
+        async with self.db.cursor() as cursor:
+            await cursor.execute("PRAGMA table_info(system_telemetry)")
+            st_cols = [row[1] for row in await cursor.fetchall()]
+            if st_cols:
+                st_migrated = False
+                if "guild_count" not in st_cols:
+                    logger.info("Migration: Adding guild_count column to system_telemetry")
+                    await cursor.execute("ALTER TABLE system_telemetry ADD COLUMN guild_count INTEGER DEFAULT 0")
+                    st_migrated = True
+                if "total_members_count" not in st_cols:
+                    logger.info("Migration: Adding total_members_count column to system_telemetry")
+                    await cursor.execute("ALTER TABLE system_telemetry ADD COLUMN total_members_count INTEGER DEFAULT 0")
+                    st_migrated = True
+                if st_migrated:
                     await self.db.commit()
 
     # --- Guild Settings Management ---
@@ -477,14 +495,16 @@ class DatabaseManager:
         disk_usage_pct: float,
         websocket_latency_ms: int,
         sqlite_db_size_bytes: int,
-        uptime_seconds: int
+        uptime_seconds: int,
+        guild_count: int = 0,
+        total_members_count: int = 0
     ) -> None:
-        """Logs system performance metrics to system_telemetry."""
+        """Logs system performance and community scale metrics to system_telemetry."""
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "INSERT INTO system_telemetry (cpu_usage_pct, ram_usage_pct, disk_usage_pct, websocket_latency_ms, sqlite_db_size_bytes, uptime_seconds) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (cpu_usage_pct, ram_usage_pct, disk_usage_pct, websocket_latency_ms, sqlite_db_size_bytes, uptime_seconds)
+                "INSERT INTO system_telemetry (cpu_usage_pct, ram_usage_pct, disk_usage_pct, websocket_latency_ms, sqlite_db_size_bytes, uptime_seconds, guild_count, total_members_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cpu_usage_pct, ram_usage_pct, disk_usage_pct, websocket_latency_ms, sqlite_db_size_bytes, uptime_seconds, guild_count, total_members_count)
             )
             await self.db.commit()
 
@@ -542,3 +562,245 @@ class DatabaseManager:
                 (guild_id, channel_id, msg_inc, bot_inc, hour_bucket)
             )
             await self.db.commit()
+
+    # --- Analytics & Reporting Queries ---
+
+    async def get_analytics_home_summary(self) -> dict:
+        """Fetches aggregated high-level statistics for the Analytics Home view."""
+        async with self.db.cursor() as cursor:
+            # 1. User stats
+            await cursor.execute("SELECT COUNT(*) FROM user_telemetry")
+            total_users = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT COUNT(*) FROM user_telemetry WHERE last_seen >= datetime('now', '-1 day')")
+            active_users_24h = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT COUNT(*) FROM user_telemetry WHERE first_seen >= datetime('now', '-1 day')")
+            new_users_24h = (await cursor.fetchone())[0] or 0
+
+            # 2. Guild events in last 7 days
+            await cursor.execute("SELECT COUNT(*) FROM guild_telemetry WHERE event_type = 'join' AND timestamp >= datetime('now', '-7 days')")
+            joins_7d = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT COUNT(*) FROM guild_telemetry WHERE event_type = 'leave' AND timestamp >= datetime('now', '-7 days')")
+            leaves_7d = (await cursor.fetchone())[0] or 0
+
+            # 3. Last 24 hourly snapshots
+            await cursor.execute(
+                "SELECT cpu_usage_pct, ram_usage_pct, websocket_latency_ms, guild_count, total_members_count, timestamp "
+                "FROM system_telemetry WHERE timestamp >= datetime('now', '-24 hours') ORDER BY timestamp ASC"
+            )
+            hourly_snapshots = await cursor.fetchall()
+
+            # 4. Total commands in last 24h
+            await cursor.execute("SELECT COUNT(*) FROM command_telemetry WHERE timestamp >= datetime('now', '-1 day')")
+            commands_24h = (await cursor.fetchone())[0] or 0
+
+            return {
+                "total_registered_users": total_users,
+                "active_users_24h": active_users_24h,
+                "new_users_24h": new_users_24h,
+                "joins_7d": joins_7d,
+                "leaves_7d": leaves_7d,
+                "hourly_snapshots": hourly_snapshots,
+                "commands_24h": commands_24h
+            }
+
+    async def get_guild_analytics_summary(self, limit: int = 10) -> dict:
+        """Fetches recent guild events and summary."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT guild_id, event_type, member_count, timestamp "
+                "FROM guild_telemetry ORDER BY timestamp DESC LIMIT ?",
+                (limit,)
+            )
+            recent_events = await cursor.fetchall()
+
+            await cursor.execute("SELECT COUNT(*) FROM guild_telemetry WHERE event_type = 'join'")
+            total_joins = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT COUNT(*) FROM guild_telemetry WHERE event_type = 'leave'")
+            total_leaves = (await cursor.fetchone())[0] or 0
+
+            return {
+                "recent_events": recent_events,
+                "total_joins": total_joins,
+                "total_leaves": total_leaves
+            }
+
+    async def get_user_analytics_summary(self, limit: int = 10) -> dict:
+        """Fetches top active users and registration trends."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT user_id, total_commands_run, first_seen, last_seen "
+                "FROM user_telemetry ORDER BY total_commands_run DESC LIMIT ?",
+                (limit,)
+            )
+            top_users = await cursor.fetchall()
+
+            await cursor.execute("SELECT COUNT(*) FROM user_telemetry WHERE first_seen >= datetime('now', '-7 days')")
+            new_users_7d = (await cursor.fetchone())[0] or 0
+
+            return {
+                "top_users": top_users,
+                "new_users_7d": new_users_7d
+            }
+
+    async def get_ai_analytics_summary(self) -> dict:
+        """Fetches AI engine metrics, model breakdown, failovers, and hourly traffic."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*), SUM(input_tokens), SUM(output_tokens), AVG(latency_ms), AVG(context_messages_count) FROM ai_telemetry WHERE timestamp >= datetime('now', '-24 hours')")
+            row = await cursor.fetchone()
+            reqs_24h = row[0] or 0
+            in_tokens_24h = row[1] or 0
+            out_tokens_24h = row[2] or 0
+            avg_latency = int(row[3] or 0)
+            avg_context = round(row[4] or 0.0, 1)
+
+            await cursor.execute("SELECT COUNT(*) FROM ai_telemetry WHERE failover_occurred = 1 AND timestamp >= datetime('now', '-24 hours')")
+            failovers_24h = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute(
+                "SELECT model_name, provider, COUNT(*), AVG(latency_ms) "
+                "FROM ai_telemetry WHERE timestamp >= datetime('now', '-24 hours') "
+                "GROUP BY model_name, provider ORDER BY COUNT(*) DESC LIMIT 6"
+            )
+            model_counts = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT trigger_type, COUNT(*) FROM ai_telemetry "
+                "WHERE timestamp >= datetime('now', '-24 hours') "
+                "GROUP BY trigger_type ORDER BY COUNT(*) DESC"
+            )
+            trigger_counts = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT model_name, failover_reason, timestamp FROM ai_telemetry "
+                "WHERE failover_occurred = 1 AND timestamp >= datetime('now', '-24 hours') "
+                "ORDER BY timestamp DESC LIMIT 4"
+            )
+            recent_failovers = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT strftime('%Y-%m-%d %H:00', timestamp), COUNT(*), SUM(input_tokens + output_tokens) "
+                "FROM ai_telemetry WHERE timestamp >= datetime('now', '-24 hours') "
+                "GROUP BY strftime('%Y-%m-%d %H:00', timestamp) ORDER BY timestamp ASC"
+            )
+            hourly_traffic = await cursor.fetchall()
+
+            return {
+                "requests_24h": reqs_24h,
+                "input_tokens_24h": in_tokens_24h,
+                "output_tokens_24h": out_tokens_24h,
+                "avg_latency_ms": avg_latency,
+                "avg_context_msgs": avg_context,
+                "failovers_24h": failovers_24h,
+                "model_counts": model_counts,
+                "trigger_counts": trigger_counts,
+                "recent_failovers": recent_failovers,
+                "hourly_traffic": hourly_traffic
+            }
+
+    async def get_error_analytics_summary(self, limit: int = 8) -> dict:
+        """Fetches error breakdown and recent traces."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM error_telemetry WHERE timestamp >= datetime('now', '-24 hours')")
+            errors_24h = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT error_type, COUNT(*) FROM error_telemetry WHERE timestamp >= datetime('now', '-24 hours') GROUP BY error_type ORDER BY COUNT(*) DESC LIMIT 5")
+            top_errors = await cursor.fetchall()
+
+            await cursor.execute("SELECT command_name, error_type, error_message, timestamp FROM error_telemetry ORDER BY timestamp DESC LIMIT ?", (limit,))
+            recent_errors = await cursor.fetchall()
+
+            return {
+                "errors_24h": errors_24h,
+                "top_errors": top_errors,
+                "recent_errors": recent_errors
+            }
+
+    async def get_command_analytics_summary(self, limit: int = 8) -> dict:
+        """Fetches command popularity and performance statistics."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM command_telemetry WHERE timestamp >= datetime('now', '-24 hours')")
+            total_24h = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT COUNT(*) FROM command_telemetry WHERE is_slash = 1 AND timestamp >= datetime('now', '-24 hours')")
+            slash_24h = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT command_name, COUNT(*) FROM command_telemetry WHERE timestamp >= datetime('now', '-24 hours') GROUP BY command_name ORDER BY COUNT(*) DESC LIMIT ?", (limit,))
+            top_commands = await cursor.fetchall()
+
+            await cursor.execute("SELECT command_name, AVG(execution_time_ms) FROM command_telemetry WHERE execution_time_ms IS NOT NULL AND timestamp >= datetime('now', '-24 hours') GROUP BY command_name ORDER BY AVG(execution_time_ms) DESC LIMIT 5")
+            slowest_commands = await cursor.fetchall()
+
+            return {
+                "total_24h": total_24h,
+                "slash_24h": slash_24h,
+                "top_commands": top_commands,
+                "slowest_commands": slowest_commands
+            }
+
+    async def get_game_analytics_summary(self, limit: int = 8) -> dict:
+        """Fetches Connect 4 game statistics."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*), AVG(turns_count), AVG(duration_seconds) FROM game_telemetry")
+            row = await cursor.fetchone()
+            total_games = row[0] or 0
+            avg_turns = round(row[1] or 0, 1)
+            avg_duration = int(row[2] or 0)
+
+            await cursor.execute("SELECT game_name, player1_id, player2_id, winner_id, turns_count, duration_seconds, timestamp FROM game_telemetry ORDER BY timestamp DESC LIMIT ?", (limit,))
+            recent_games = await cursor.fetchall()
+
+            return {
+                "total_games": total_games,
+                "avg_turns": avg_turns,
+                "avg_duration": avg_duration,
+                "recent_games": recent_games
+            }
+
+    async def get_media_analytics_summary(self, limit: int = 8) -> dict:
+        """Fetches YouTube audio downloader statistics."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*), SUM(file_size_bytes) FROM media_telemetry")
+            row = await cursor.fetchone()
+            total_downloads = row[0] or 0
+            total_bytes = row[1] or 0
+
+            await cursor.execute("SELECT COUNT(*) FROM media_telemetry WHERE status = 'success'")
+            successful_downloads = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT user_id, duration_seconds, file_size_bytes, status, timestamp FROM media_telemetry ORDER BY timestamp DESC LIMIT ?", (limit,))
+            recent_downloads = await cursor.fetchall()
+
+            return {
+                "total_downloads": total_downloads,
+                "successful_downloads": successful_downloads,
+                "total_bytes": total_bytes,
+                "recent_downloads": recent_downloads
+            }
+
+    async def get_audit_analytics_summary(self, limit: int = 8) -> dict:
+        """Fetches guild settings audit logs."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM settings_audit_telemetry")
+            total_edits = (await cursor.fetchone())[0] or 0
+
+            await cursor.execute("SELECT guild_id, user_id, setting_key, old_value, new_value, timestamp FROM settings_audit_telemetry ORDER BY timestamp DESC LIMIT ?", (limit,))
+            recent_audits = await cursor.fetchall()
+
+            return {
+                "total_edits": total_edits,
+                "recent_audits": recent_audits
+            }
+
+    async def get_heatmap_analytics_summary(self) -> dict:
+        """Fetches server peak hour activity distribution."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT hour_bucket, SUM(message_count), SUM(bot_responses) FROM activity_heatmap_telemetry GROUP BY hour_bucket ORDER BY SUM(message_count) DESC LIMIT 6")
+            peak_hours = await cursor.fetchall()
+
+            return {
+                "peak_hours": peak_hours
+            }
