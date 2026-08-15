@@ -701,6 +701,35 @@ class DatabaseManager:
                 "hourly_traffic": hourly_traffic
             }
 
+    async def get_guild_monthly_ai_usage(self, guild_id: int) -> dict:
+        """Fetches the current calendar month's AI spend, token consumption, and model breakdown for a guild."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT COALESCE(SUM(estimated_cost), 0.0), COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0) "
+                "FROM ai_telemetry "
+                "WHERE guild_id = ? AND timestamp >= datetime('now', 'start of month')",
+                (guild_id,)
+            )
+            row = await cursor.fetchone()
+            total_cost, total_prompts, total_in, total_out = row if row else (0.0, 0, 0, 0)
+
+            await cursor.execute(
+                "SELECT model_name, COUNT(*), COALESCE(SUM(estimated_cost), 0.0) "
+                "FROM ai_telemetry "
+                "WHERE guild_id = ? AND timestamp >= datetime('now', 'start of month') "
+                "GROUP BY model_name ORDER BY COUNT(*) DESC LIMIT 5",
+                (guild_id,)
+            )
+            top_models = await cursor.fetchall()
+
+            return {
+                "total_cost": float(total_cost or 0.0),
+                "total_prompts": int(total_prompts or 0),
+                "total_input_tokens": int(total_in or 0),
+                "total_output_tokens": int(total_out or 0),
+                "top_models": top_models
+            }
+
     async def get_error_analytics_summary(self, limit: int = 8) -> dict:
         """Fetches error breakdown and recent traces."""
         async with self.db.cursor() as cursor:

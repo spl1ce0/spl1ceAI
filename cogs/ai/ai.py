@@ -40,7 +40,8 @@ class AIResponse:
         image_bytes: bytes = None,
         image_filename: str = None,
         failover_occurred: bool = False,
-        failover_reason: str = None
+        failover_reason: str = None,
+        estimated_cost: float = 0.0
     ):
         self.text = text
         self.usage_metadata = AIUsage(prompt_tokens, completion_tokens)
@@ -50,6 +51,7 @@ class AIResponse:
         self.image_filename = image_filename
         self.failover_occurred = failover_occurred
         self.failover_reason = failover_reason
+        self.estimated_cost = estimated_cost
 
 class Model(ABC):
     """Represents a specific configured LLM (e.g. 'gpt-5-mini')."""
@@ -63,6 +65,9 @@ class Model(ABC):
         self.supports_image_gen = config.get("supports_image_gen", False)
         self.display_name = config.get("name", name)
         self.provider_display_name = config.get("provider_name", self.provider.capitalize())
+        self.input_cost_per_m = float(config.get("input_cost_per_m", 0.15))
+        self.output_cost_per_m = float(config.get("output_cost_per_m", 0.60))
+        self.image_cost = float(config.get("image_cost", 0.035))
         
         # Resolve prompt inheritance
         override = config.get("system_instruction_override")
@@ -87,6 +92,12 @@ class Model(ABC):
         if self.system_instruction_template:
             return self.system_instruction_template.format(today_str=today_str)
         return ""
+
+    def calculate_cost(self, prompt_tokens: int, completion_tokens: int, has_image: bool = False) -> float:
+        in_cost = (prompt_tokens / 1_000_000.0) * self.input_cost_per_m
+        out_cost = (completion_tokens / 1_000_000.0) * self.output_cost_per_m
+        img_cost = self.image_cost if has_image else 0.0
+        return round(in_cost + out_cost + img_cost, 6)
 
     @abstractmethod
     async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
@@ -120,6 +131,11 @@ class Model(ABC):
                     else:
                         raise AIError(f"Image generation failed for prompt: {image_prompt}")
                     
+        # 3. Calculate estimated cost
+        in_tok = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
+        out_tok = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+        response.estimated_cost = self.calculate_cost(in_tok, out_tok, has_image=bool(response.image_bytes))
+
         return response
 
 

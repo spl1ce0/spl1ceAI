@@ -6,9 +6,9 @@ This package manages all Large Language Model (LLM) communications, multi-tier p
 
 ## 📁 Files & Structure
 
-* **`cog.py` (`AI`)**: The Discord Cog front-end. Defines `/ask`, `/summarize`, `/summon`, and the `on_message` listener. Handles session lifecycles, duration timers, warning throttling, and real-time AI transaction telemetry logging (`ai_telemetry`).
-* **`ai.py`**: The core AI processing engine containing model client abstraction classes, prompt builders, failover orchestrators, and latency/model tracking metadata.
-* **`models.json`**: Model provider catalog defining supported model endpoints, providers (Google Gemini, OpenAI, Anthropic, xAI Grok), API formats, and capability flags.
+* **`cog.py` (`AI`)**: The Discord Cog front-end. Defines `/quota` (`/usage`), `/ask`, `/summarize`, `/summon`, and the `on_message` listener. Handles session lifecycles, duration timers, monthly €5.00 guild budget quota enforcement, warning throttling, and real-time AI transaction telemetry logging (`ai_telemetry`).
+* **`ai.py`**: The core AI processing engine containing model client abstraction classes, prompt builders, failover orchestrators, per-model token/image cost calculators (EUR), and latency/model tracking metadata.
+* **`models.json`**: Model provider catalog defining supported model endpoints, providers (Google Gemini, OpenAI, Anthropic, xAI Grok), API formats, input/output token pricing per 1M tokens in EUR, and capability flags.
 
 ---
 

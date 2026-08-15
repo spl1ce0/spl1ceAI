@@ -5,6 +5,7 @@ import logging
 import datetime
 import typing
 import discord
+from discord import ui
 from discord.ext import commands
 
 from cogs.utils.exceptions import (
@@ -22,8 +23,63 @@ logger = logging.getLogger(__name__)
 
 # Errors and Emojis imported from cogs.utils.constants
 
+
+class QuotaContainer(ui.Container):
+    def __init__(self, guild_name: str, data: dict, limit_eur: float = 5.00):
+        super().__init__()
+        
+        self.add_item(ui.TextDisplay(f"### 💳 AI Monthly Budget & Quota\n-# Spending and token usage for **{guild_name}**."))
+        self.add_item(ui.Separator())
+
+        spent = data.get("total_cost", 0.0)
+        pct = min(100.0, (spent / limit_eur) * 100.0) if limit_eur > 0 else 0.0
+        remaining = max(0.0, limit_eur - spent)
+
+        # Visual progress bar (16 blocks)
+        filled = int((pct / 100.0) * 16)
+        bar = "█" * filled + "░" * (16 - filled)
+
+        # Calculate next month reset timestamp
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if now.month == 12:
+            next_month = datetime.datetime(now.year + 1, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        else:
+            next_month = datetime.datetime(now.year, now.month + 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        reset_ts = int(next_month.timestamp())
+
+        cost_text = (
+            f"**Budget Spent:** €{spent:.3f} / €{limit_eur:.2f} ({pct:.1f}%)\n"
+            f"`[{bar}]`\n"
+            f"**Remaining Allowance:** €{remaining:.3f}\n"
+            f"**Monthly Reset:** <t:{reset_ts}:D> (<t:{reset_ts}:R>)"
+        )
+        self.add_item(ui.TextDisplay(cost_text))
+        self.add_item(ui.Separator())
+
+        total_prompts = data.get("total_prompts", 0)
+        total_tokens = data.get("total_input_tokens", 0) + data.get("total_output_tokens", 0)
+        
+        stats_text = (
+            f"**Total Prompts This Month:** {total_prompts:,}\n"
+            f"**Tokens Consumed:** {total_tokens:,} ({data.get('total_input_tokens', 0):,} in • {data.get('total_output_tokens', 0):,} out)"
+        )
+        self.add_item(ui.TextDisplay(stats_text))
+        self.add_item(ui.Separator())
+
+        top_models = data.get("top_models", [])
+        if top_models:
+            model_lines = []
+            for mname, count, mcost in top_models:
+                model_lines.append(f"• `{mname}`: **{count:,}** prompts (approx. €{mcost:.3f})")
+            models_str = "\n".join(model_lines)
+            self.add_item(ui.TextDisplay(f"**Top Models by Usage:**\n{models_str}"))
+        else:
+            self.add_item(ui.TextDisplay("*No AI requests recorded for this server this month.*"))
+
+
 class AI(commands.Cog):
     CHAT_HISTORY_LIMIT = 20
+    MONTHLY_GUILD_LIMIT_EUR = 5.00
 
     def __init__(self, bot):
         self.bot = bot
@@ -36,7 +92,6 @@ class AI(commands.Cog):
         self.response_orchestrator = ResponseHandler(bot)
         
         self.active_summons = {}
-        self.DAILY_TOKEN_LIMIT = 1000000
         self.warning_counters = {}
 
 
@@ -65,14 +120,13 @@ class AI(commands.Cog):
         logger.info(f"Loaded {len(self.active_summons)} active summons.")
 
 
-    async def check_quota(self):
-        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        usage = await self.bot.db_manager.get_daily_usage(today)
-        if usage:
-            in_tok, out_tok, _ = usage
-            total_tokens = in_tok + out_tok
-            if total_tokens >= self.DAILY_TOKEN_LIMIT:
-                return False
+    async def check_quota(self, guild_id: typing.Optional[int] = None) -> bool:
+        """Checks if the guild has reached its monthly EUR budget ceiling."""
+        if not guild_id:
+            return True
+        usage = await self.bot.db_manager.get_guild_monthly_ai_usage(guild_id)
+        if usage.get("total_cost", 0.0) >= self.MONTHLY_GUILD_LIMIT_EUR:
+            return False
         return True
 
 
@@ -117,11 +171,23 @@ class AI(commands.Cog):
         return message_list
 
 
+    @commands.hybrid_command(name="quota", aliases=["usage", "aiquota", "budget"])
+    @commands.guild_only()
+    async def quota(self, ctx: commands.Context):
+        """Displays the server's monthly AI spending, budget progress, and token consumption."""
+        await ctx.defer()
+        usage_data = await self.bot.db_manager.get_guild_monthly_ai_usage(ctx.guild.id)
+        container = QuotaContainer(ctx.guild.name, usage_data, limit_eur=self.MONTHLY_GUILD_LIMIT_EUR)
+        view = ui.View(timeout=None)
+        view.add_item(container)
+        await ctx.reply(view=view)
+
+
     @commands.hybrid_command(name="summarize", aliases=["tldr", "aint_readin_allat"])
     @commands.guild_only()
     async def summarize(self, ctx, limit: int):
         """Summarizes last N messages."""
-        if not await self.check_quota():
+        if not await self.check_quota(ctx.guild.id if ctx.guild else None):
             raise AIQuotaReachedError()
             
         await ctx.defer(ephemeral=True)
@@ -155,7 +221,7 @@ class AI(commands.Cog):
                 provider=getattr(response, "provider", "unknown") or "unknown",
                 input_tokens=in_tokens or 0,
                 output_tokens=out_tokens or 0,
-                estimated_cost=0.0,
+                estimated_cost=getattr(response, "estimated_cost", 0.0) or 0.0,
                 latency_ms=latency_ms,
                 context_messages_count=len(message_list),
                 finish_reason="STOP",
@@ -176,7 +242,7 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def ask(self, ctx, question: str, image: typing.Optional[discord.Attachment] = None):
         """Asks the AI a question. Optionally attach an image."""
-        if not await self.check_quota():
+        if not await self.check_quota(ctx.guild.id if ctx.guild else None):
             raise AIQuotaReachedError()
             
         await ctx.defer()
@@ -217,7 +283,7 @@ class AI(commands.Cog):
                 provider=getattr(response, "provider", "unknown") or "unknown",
                 input_tokens=in_tokens or 0,
                 output_tokens=out_tokens or 0,
-                estimated_cost=0.0,
+                estimated_cost=getattr(response, "estimated_cost", 0.0) or 0.0,
                 latency_ms=latency_ms,
                 context_messages_count=len(message_list),
                 finish_reason="STOP",
@@ -237,7 +303,7 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def summon(self, ctx, duration: str = "10m"):
         """Summons the AI to listen and respond in this channel for a duration (e.g. 5m, 1h)."""
-        if not await self.check_quota():
+        if not await self.check_quota(ctx.guild.id if ctx.guild else None):
             raise AIQuotaReachedError()
             
         if ctx.channel.id in self.active_summons:
@@ -299,13 +365,13 @@ class AI(commands.Cog):
             return True
         return False
 
-    async def _validate_quota_with_warnings(self, message: discord.Message, channel_id: int) -> bool:
+    async def _validate_quota_with_warnings(self, message: discord.Message, guild_id: typing.Optional[int], channel_id: int) -> bool:
         channel_data = self.warning_counters.setdefault(channel_id, {'quota': 0, 'busy': 0, 'chat_messages_since_busy_warning': 999})
         if 'chat_messages_since_busy_warning' not in channel_data:
             channel_data['chat_messages_since_busy_warning'] = 0
         channel_data['chat_messages_since_busy_warning'] += 1
 
-        quota_ok = await self.check_quota()
+        quota_ok = await self.check_quota(guild_id)
         if quota_ok:
             if channel_id in self.warning_counters:
                 self.warning_counters[channel_id]['quota'] = 0
@@ -357,7 +423,7 @@ class AI(commands.Cog):
                         provider=getattr(response, "provider", "unknown") or "unknown",
                         input_tokens=in_tokens or 0,
                         output_tokens=out_tokens or 0,
-                        estimated_cost=0.0,
+                        estimated_cost=getattr(response, "estimated_cost", 0.0) or 0.0,
                         latency_ms=latency_ms,
                         context_messages_count=len(message_list),
                         finish_reason="STOP",
@@ -430,7 +496,7 @@ class AI(commands.Cog):
         if is_summoned and await self._check_summon_expiration(message, channel_id):
             return
 
-        if not await self._validate_quota_with_warnings(message, channel_id):
+        if not await self._validate_quota_with_warnings(message, guild_id, channel_id):
             return
 
         # Determine trigger type
