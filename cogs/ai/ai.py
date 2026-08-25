@@ -94,8 +94,10 @@ class Model(ABC):
         return ""
 
     def calculate_cost(self, prompt_tokens: int, completion_tokens: int, has_image: bool = False) -> float:
-        in_cost = (prompt_tokens / 1_000_000.0) * self.input_cost_per_m
-        out_cost = (completion_tokens / 1_000_000.0) * self.output_cost_per_m
+        p_tok = prompt_tokens or 0
+        c_tok = completion_tokens or 0
+        in_cost = (p_tok / 1_000_000.0) * self.input_cost_per_m
+        out_cost = (c_tok / 1_000_000.0) * self.output_cost_per_m
         img_cost = self.image_cost if has_image else 0.0
         return round(in_cost + out_cost + img_cost, 6)
 
@@ -185,8 +187,8 @@ class GeminiModel(Model):
             if not response.text:
                 raise AISafetyBlockedError("Gemini response blocked by safety filters.")
                 
-            prompt_tokens = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
-            completion_tokens = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+            prompt_tokens = (response.usage_metadata.prompt_token_count or 0) if response.usage_metadata else 0
+            completion_tokens = (response.usage_metadata.candidates_token_count or 0) if response.usage_metadata else 0
             return AIResponse(response.text, prompt_tokens, completion_tokens, model_name=self.model_id)
             
         except APIError as e:

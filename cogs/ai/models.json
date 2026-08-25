@@ -20,16 +20,16 @@
     "",
     "IGNORE FILTER: If a message is pure spam or does not need a reply, output only '[IGNORE]'."
   ],
-  "gemini-flash-lite-latest": {
+  "gemini-3.7-flash": {
     "provider": "gemini",
     "provider_name": "Google",
-    "name": "Gemini Flash Lite (Latest)",
-    "model_id": "gemini-flash-lite-latest",
+    "name": "Gemini 3.7 Flash",
+    "model_id": "gemini-3.7-flash",
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 0.10,
-    "output_cost_per_m": 0.40,
+    "input_cost_per_m": 0.75,
+    "output_cost_per_m": 3.75,
     "image_cost": 0.035
   },
   "gemini-3.5-flash": {
@@ -44,18 +44,6 @@
     "output_cost_per_m": 2.30,
     "image_cost": 0.035
   },
-  "gemini-3.1-pro-preview": {
-    "provider": "gemini",
-    "provider_name": "Google",
-    "name": "Gemini 3.1 Pro (Preview)",
-    "model_id": "gemini-3.1-pro-preview",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 1.15,
-    "output_cost_per_m": 9.20,
-    "image_cost": 0.035
-  },
   "gemini-3.1-flash-lite": {
     "provider": "gemini",
     "provider_name": "Google",
@@ -68,53 +56,65 @@
     "output_cost_per_m": 0.40,
     "image_cost": 0.035
   },
-  "gemini-2.5-pro": {
+  "gemini-3.1-pro": {
     "provider": "gemini",
     "provider_name": "Google",
-    "name": "Gemini 2.5 Pro",
-    "model_id": "gemini-2.5-pro",
+    "name": "Gemini 3.1 Pro",
+    "model_id": "gemini-3.1-pro-preview",
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 1.15,
-    "output_cost_per_m": 9.20,
+    "input_cost_per_m": 2.00,
+    "output_cost_per_m": 12.00,
     "image_cost": 0.035
   },
-  "gpt-5.4-mini": {
-    "provider": "openai",
-    "provider_name": "OpenAI",
-    "name": "GPT-5.4 Mini",
-    "model_id": "gpt-5.4-mini",
+  "grok-4.20-non-reasoning": {
+    "provider": "grok",
+    "provider_name": "xAI",
+    "name": "Grok 4.20 (Fast)",
+    "model_id": "grok-4.20-0309-non-reasoning",
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 0.14,
-    "output_cost_per_m": 0.55,
-    "image_cost": 0.035
+    "input_cost_per_m": 0.20,
+    "output_cost_per_m": 0.50,
+    "image_cost": 0.010
   },
-  "gpt-4o": {
-    "provider": "openai",
-    "provider_name": "OpenAI",
-    "name": "GPT-4o",
-    "model_id": "gpt-4o",
+  "grok-4.3": {
+    "provider": "grok",
+    "provider_name": "xAI",
+    "name": "Grok 4.3",
+    "model_id": "grok-4.3",
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 2.30,
-    "output_cost_per_m": 9.20,
-    "image_cost": 0.035
+    "input_cost_per_m": 1.25,
+    "output_cost_per_m": 2.50,
+    "image_cost": 0.010
   },
-  "gpt-4o-mini": {
-    "provider": "openai",
-    "provider_name": "OpenAI",
-    "name": "GPT-4o Mini",
-    "model_id": "gpt-4o-mini",
+  "grok-4.5": {
+    "provider": "grok",
+    "provider_name": "xAI",
+    "name": "Grok 4.5",
+    "model_id": "grok-4.5",
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 0.14,
-    "output_cost_per_m": 0.55,
-    "image_cost": 0.035
+    "input_cost_per_m": 2.00,
+    "output_cost_per_m": 6.00,
+    "image_cost": 0.010
+  },
+  "grok-4.6": {
+    "provider": "grok",
+    "provider_name": "xAI",
+    "name": "Grok 4.6",
+    "model_id": "grok-4.6",
+    "supports_vision": true,
+    "supports_search": true,
+    "supports_image_gen": true,
+    "input_cost_per_m": 2.00,
+    "output_cost_per_m": 6.00,
+    "image_cost": 0.010
   },
   "gpt-5.6-luna": {
     "provider": "openai",
@@ -124,8 +124,8 @@
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 2.00,
-    "output_cost_per_m": 8.00,
+    "input_cost_per_m": 0.20,
+    "output_cost_per_m": 1.20,
     "image_cost": 0.035
   },
   "gpt-5.6-terra": {
@@ -137,66 +137,18 @@
     "supports_search": true,
     "supports_image_gen": true,
     "input_cost_per_m": 2.00,
-    "output_cost_per_m": 8.00,
-    "image_cost": 0.035
-  },
-  "gpt-5.5": {
-    "provider": "openai",
-    "provider_name": "OpenAI",
-    "name": "GPT-5.5",
-    "model_id": "gpt-5.5",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 2.00,
-    "output_cost_per_m": 8.00,
-    "image_cost": 0.035
-  },
-  "gpt-5.4": {
-    "provider": "openai",
-    "provider_name": "OpenAI",
-    "name": "GPT-5.4",
-    "model_id": "gpt-5.4",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 2.00,
-    "output_cost_per_m": 8.00,
-    "image_cost": 0.035
-  },
-  "gpt-5.4-nano": {
-    "provider": "openai",
-    "provider_name": "OpenAI",
-    "name": "GPT-5.4 Nano",
-    "model_id": "gpt-5.4-nano",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 0.08,
-    "output_cost_per_m": 0.35,
-    "image_cost": 0.035
-  },
-  "claude-haiku-4-5-20251001": {
-    "provider": "anthropic",
-    "provider_name": "Anthropic",
-    "name": "Claude Haiku 4.5 (Legacy)",
-    "model_id": "claude-haiku-4-5-20251001",
-    "supports_vision": true,
-    "supports_search": true,
-    "input_cost_per_m": 0.90,
-    "output_cost_per_m": 4.60,
+    "output_cost_per_m": 12.00,
     "image_cost": 0.035
   },
   "claude-haiku-4.5": {
     "provider": "anthropic",
     "provider_name": "Anthropic",
     "name": "Claude Haiku 4.5",
-    "model_id": "claude-haiku-4.5",
+    "model_id": "claude-haiku-4-5-20251001",
     "supports_vision": true,
     "supports_search": true,
-    "input_cost_per_m": 0.90,
-    "output_cost_per_m": 4.60,
-    "image_cost": 0.035
+    "input_cost_per_m": 1.00,
+    "output_cost_per_m": 5.00
   },
   "claude-sonnet-5": {
     "provider": "anthropic",
@@ -205,66 +157,7 @@
     "model_id": "claude-sonnet-5",
     "supports_vision": true,
     "supports_search": true,
-    "input_cost_per_m": 2.75,
-    "output_cost_per_m": 13.80,
-    "image_cost": 0.035
-  },
-  "claude-sonnet-4.6": {
-    "provider": "anthropic",
-    "provider_name": "Anthropic",
-    "name": "Claude Sonnet 4.6",
-    "model_id": "claude-sonnet-4.6",
-    "supports_vision": true,
-    "supports_search": true,
-    "input_cost_per_m": 2.75,
-    "output_cost_per_m": 13.80,
-    "image_cost": 0.035
-  },
-  "claude-sonnet-4.5": {
-    "provider": "anthropic",
-    "provider_name": "Anthropic",
-    "name": "Claude Sonnet 4.5",
-    "model_id": "claude-sonnet-4.5",
-    "supports_vision": true,
-    "supports_search": true,
-    "input_cost_per_m": 2.75,
-    "output_cost_per_m": 13.80,
-    "image_cost": 0.035
-  },
-  "grok-4.3": {
-    "provider": "grok",
-    "provider_name": "xAI",
-    "name": "Grok 4.3",
-    "model_id": "grok-4.3",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 1.15,
-    "output_cost_per_m": 2.30,
-    "image_cost": 0.035
-  },
-  "grok-4.5": {
-    "provider": "grok",
-    "provider_name": "xAI",
-    "name": "Grok 4.5",
-    "model_id": "grok-4.5",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 1.85,
-    "output_cost_per_m": 5.50,
-    "image_cost": 0.035
-  },
-  "grok-4.20": {
-    "provider": "grok",
-    "provider_name": "xAI",
-    "name": "Grok 4.20",
-    "model_id": "grok-4.20",
-    "supports_vision": true,
-    "supports_search": true,
-    "supports_image_gen": true,
-    "input_cost_per_m": 1.15,
-    "output_cost_per_m": 2.30,
-    "image_cost": 0.035
+    "input_cost_per_m": 2.00,
+    "output_cost_per_m": 10.00
   }
 }
