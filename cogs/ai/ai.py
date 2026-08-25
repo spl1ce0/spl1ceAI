@@ -566,9 +566,11 @@ class ModelManager:
         
         # Initialize Google Client
         gemini_key = os.getenv("GEMINI_API_KEY")
+        gemini_proxy_url = os.getenv("GEMINI_PROXY_URL") or os.getenv("GEMINI_BASE_URL")
         if gemini_key:
             from google import genai
-            self.clients["gemini"] = genai.Client(api_key=gemini_key)
+            http_opts = {"base_url": gemini_proxy_url.rstrip("/")} if gemini_proxy_url else None
+            self.clients["gemini"] = genai.Client(api_key=gemini_key, http_options=http_opts)
         else:
             logger.error("GEMINI_API_KEY not found in environment variables.")
 
