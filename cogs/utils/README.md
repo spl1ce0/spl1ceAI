@@ -30,6 +30,9 @@ This package contains shared system infrastructure, asynchronous database manage
 | **`media_telemetry`** | YouTube audio download and conversion history. | `id`, `guild_id`, `user_id`, `url`, `duration_seconds`, `file_size_bytes`, `status`, `timestamp` |
 | **`settings_audit_telemetry`** | Audit trail of server configuration edits. | `id`, `guild_id`, `user_id`, `setting_key`, `old_value`, `new_value`, `timestamp` |
 | **`activity_heatmap_telemetry`** | Hourly channel message volume and bot replies. | `id`, `guild_id`, `channel_id`, `message_count`, `bot_responses`, `hour_bucket`, `timestamp` |
+| **`user_economy`** | Global user wallet balance, daily reward claims, streak, and lifetime betting volume. | `user_id`, `balance`, `daily_last_claimed`, `daily_streak`, `total_wagered`, `total_won`, `created_at`, `updated_at` |
+| **`blackjack_stats`** | Deep aggregated statistics for Blackjack players. | `user_id`, `wagered`, `won`, `hands_played`, `hands_won`, `hands_lost`, `hands_pushed`, `blackjacks`, `biggest_win` |
+| **`blackjack_hand_telemetry`** | Granular ledger/audit log for every single Blackjack hand played. | `id`, `guild_id`, `table_id`, `table_name`, `user_id`, `bet_amount`, `payout_amount`, `net_profit`, `result_type`, `player_cards`, `player_val`, `dealer_cards`, `dealer_val`, `is_doubled`, `is_split`, `is_blackjack`, `timestamp` |
 
 ---
 

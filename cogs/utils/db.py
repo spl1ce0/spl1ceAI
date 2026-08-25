@@ -94,6 +94,26 @@ class DatabaseManager:
                 "timestamp TEXT DEFAULT CURRENT_TIMESTAMP)"
             )
             await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS blackjack_hand_telemetry ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "guild_id INTEGER, "
+                "table_id TEXT, "
+                "table_name TEXT, "
+                "user_id INTEGER NOT NULL, "
+                "bet_amount REAL NOT NULL, "
+                "payout_amount REAL NOT NULL, "
+                "net_profit REAL NOT NULL, "
+                "result_type TEXT NOT NULL, "
+                "player_cards TEXT, "
+                "player_val INTEGER, "
+                "dealer_cards TEXT, "
+                "dealer_val INTEGER, "
+                "is_doubled INTEGER DEFAULT 0, "
+                "is_split INTEGER DEFAULT 0, "
+                "is_blackjack INTEGER DEFAULT 0, "
+                "timestamp TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            await cursor.execute(
                 "CREATE TABLE IF NOT EXISTS media_telemetry ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "guild_id INTEGER, "
@@ -154,6 +174,29 @@ class DatabaseManager:
                 "hour_bucket TEXT NOT NULL, "
                 "timestamp TEXT DEFAULT CURRENT_TIMESTAMP, "
                 "UNIQUE(guild_id, channel_id, hour_bucket))"
+            )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS user_economy ("
+                "user_id INTEGER PRIMARY KEY, "
+                "balance REAL NOT NULL DEFAULT 1000.0, "
+                "daily_last_claimed TEXT, "
+                "daily_streak INTEGER NOT NULL DEFAULT 0, "
+                "total_wagered REAL NOT NULL DEFAULT 0.0, "
+                "total_won REAL NOT NULL DEFAULT 0.0, "
+                "created_at TEXT DEFAULT CURRENT_TIMESTAMP, "
+                "updated_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS blackjack_stats ("
+                "user_id INTEGER PRIMARY KEY, "
+                "wagered REAL NOT NULL DEFAULT 0.0, "
+                "won REAL NOT NULL DEFAULT 0.0, "
+                "hands_played INTEGER NOT NULL DEFAULT 0, "
+                "hands_won INTEGER NOT NULL DEFAULT 0, "
+                "hands_lost INTEGER NOT NULL DEFAULT 0, "
+                "hands_pushed INTEGER NOT NULL DEFAULT 0, "
+                "blackjacks INTEGER NOT NULL DEFAULT 0, "
+                "biggest_win REAL NOT NULL DEFAULT 0.0)"
             )
             await self.db.commit()
 
@@ -832,4 +875,287 @@ class DatabaseManager:
 
             return {
                 "peak_hours": peak_hours
+            }
+
+    # ==========================================
+    # --- USER ECONOMY & CASINO SYSTEM ---
+    # ==========================================
+
+    async def get_user_economy(self, user_id: int) -> dict:
+        """Fetches user wallet and streak data. Creates new wallet with 1000.0€ if user is new."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT balance, daily_last_claimed, daily_streak, total_wagered, total_won FROM user_economy WHERE user_id = ?",
+                (user_id,)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                await cursor.execute(
+                    "INSERT INTO user_economy (user_id, balance, daily_streak, total_wagered, total_won) VALUES (?, 1000.0, 0, 0.0, 0.0)",
+                    (user_id,)
+                )
+                await self.db.commit()
+                return {
+                    "user_id": user_id,
+                    "balance": 1000.0,
+                    "daily_last_claimed": None,
+                    "daily_streak": 0,
+                    "total_wagered": 0.0,
+                    "total_won": 0.0
+                }
+            return {
+                "user_id": user_id,
+                "balance": float(row[0]),
+                "daily_last_claimed": row[1],
+                "daily_streak": int(row[2]),
+                "total_wagered": float(row[3]),
+                "total_won": float(row[4])
+            }
+
+    async def check_daily_status(self, user_id: int) -> Tuple[bool, Optional[int]]:
+        """Checks whether a user is eligible to claim their daily bonus right now."""
+        economy = await self.get_user_economy(user_id)
+        last_claimed_str = economy.get("daily_last_claimed")
+        if not last_claimed_str:
+            return True, None
+
+        import datetime
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        try:
+            last_claimed_dt = datetime.datetime.fromisoformat(last_claimed_str.replace("Z", "+00:00"))
+            if last_claimed_dt.tzinfo is None:
+                last_claimed_dt = last_claimed_dt.replace(tzinfo=datetime.timezone.utc)
+            diff = (now_dt - last_claimed_dt).total_seconds()
+            if diff < 86400:
+                next_claim_dt = last_claimed_dt + datetime.timedelta(days=1)
+                return False, int(next_claim_dt.timestamp())
+            return True, None
+        except Exception:
+            return True, None
+
+    async def claim_daily(self, user_id: int) -> Tuple[bool, dict]:
+        """Claims daily bonus (100€ base + 5€ per streak day). Enforces 24-hour cooldown."""
+        import datetime
+        economy = await self.get_user_economy(user_id)
+        last_claimed_str = economy.get("daily_last_claimed")
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        current_streak = economy.get("daily_streak", 0)
+
+        if last_claimed_str:
+            try:
+                last_claimed_dt = datetime.datetime.fromisoformat(last_claimed_str.replace("Z", "+00:00"))
+                if last_claimed_dt.tzinfo is None:
+                    last_claimed_dt = last_claimed_dt.replace(tzinfo=datetime.timezone.utc)
+                diff = (now_dt - last_claimed_dt).total_seconds()
+                
+                # If claimed within the last 24 hours (86,400s), user cannot claim yet
+                if diff < 86400:
+                    next_claim_dt = last_claimed_dt + datetime.timedelta(days=1)
+                    return False, {
+                        "balance": economy["balance"],
+                        "streak": current_streak,
+                        "next_claim_timestamp": int(next_claim_dt.timestamp())
+                    }
+                
+                # If claimed between 24h and 48h (172,800s), increment streak; otherwise reset streak to 1
+                if diff <= 172800:
+                    new_streak = current_streak + 1
+                else:
+                    new_streak = 1
+            except Exception:
+                new_streak = 1
+        else:
+            new_streak = 1
+
+        reward = 100.0 + (5.0 * (new_streak - 1))
+        new_balance = economy["balance"] + reward
+        now_iso = now_dt.isoformat()
+
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "UPDATE user_economy SET balance = ?, daily_last_claimed = ?, daily_streak = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                (new_balance, now_iso, new_streak, user_id)
+            )
+            await self.db.commit()
+
+        next_claim_dt = now_dt + datetime.timedelta(days=1)
+        return True, {
+            "reward": reward,
+            "new_balance": new_balance,
+            "streak": new_streak,
+            "next_claim_timestamp": int(next_claim_dt.timestamp())
+        }
+
+    async def adjust_user_balance(self, user_id: int, delta: float) -> float:
+        """Safely adjusts a user's wallet balance. Returns updated balance."""
+        economy = await self.get_user_economy(user_id)
+        new_balance = max(0.0, economy["balance"] + delta)
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "UPDATE user_economy SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                (new_balance, user_id)
+            )
+            await self.db.commit()
+        return new_balance
+
+    async def get_blackjack_stats(self, user_id: int) -> dict:
+        """Fetches blackjack-specific performance metrics for a user."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT wagered, won, hands_played, hands_won, hands_lost, hands_pushed, blackjacks, biggest_win FROM blackjack_stats WHERE user_id = ?",
+                (user_id,)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return {
+                    "user_id": user_id,
+                    "wagered": 0.0,
+                    "won": 0.0,
+                    "hands_played": 0,
+                    "hands_won": 0,
+                    "hands_lost": 0,
+                    "hands_pushed": 0,
+                    "blackjacks": 0,
+                    "biggest_win": 0.0
+                }
+            return {
+                "user_id": user_id,
+                "wagered": float(row[0]),
+                "won": float(row[1]),
+                "hands_played": int(row[2]),
+                "hands_won": int(row[3]),
+                "hands_lost": int(row[4]),
+                "hands_pushed": int(row[5]),
+                "blackjacks": int(row[6]),
+                "biggest_win": float(row[7])
+            }
+
+    async def record_blackjack_hand(
+        self,
+        user_id: int,
+        bet_amount: float,
+        payout_amount: float,
+        result_type: str,
+        is_blackjack: bool = False,
+        guild_id: Optional[int] = None,
+        table_id: Optional[str] = None,
+        table_name: Optional[str] = None,
+        player_cards: Optional[str] = None,
+        player_val: Optional[int] = None,
+        dealer_cards: Optional[str] = None,
+        dealer_val: Optional[int] = None,
+        is_doubled: bool = False,
+        is_split: bool = False
+    ) -> None:
+        """Updates user_economy, blackjack_stats, and logs blackjack_hand_telemetry."""
+        profit = payout_amount - bet_amount
+        won_inc = 1 if result_type in ('win', 'blackjack') else 0
+        loss_inc = 1 if result_type == 'loss' else 0
+        push_inc = 1 if result_type == 'push' else 0
+        bj_inc = 1 if is_blackjack else 0
+
+        async with self.db.cursor() as cursor:
+            # 1. Update user_economy (bet was already deducted at deal time, add payout_amount to balance)
+            await cursor.execute(
+                "INSERT INTO user_economy (user_id, balance, total_wagered, total_won) "
+                "VALUES (?, 1000.0 + ?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "balance = MAX(0.0, balance + ?), "
+                "total_wagered = total_wagered + ?, "
+                "total_won = total_won + ?, "
+                "updated_at = CURRENT_TIMESTAMP",
+                (user_id, profit, bet_amount, payout_amount, payout_amount, bet_amount, payout_amount)
+            )
+
+            # 2. Update blackjack_stats
+            await cursor.execute(
+                "INSERT INTO blackjack_stats (user_id, wagered, won, hands_played, hands_won, hands_lost, hands_pushed, blackjacks, biggest_win) "
+                "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "wagered = wagered + ?, "
+                "won = won + ?, "
+                "hands_played = hands_played + 1, "
+                "hands_won = hands_won + ?, "
+                "hands_lost = hands_lost + ?, "
+                "hands_pushed = hands_pushed + ?, "
+                "blackjacks = blackjacks + ?, "
+                "biggest_win = MAX(biggest_win, ?)",
+                (
+                    user_id, bet_amount, payout_amount, won_inc, loss_inc, push_inc, bj_inc, payout_amount,
+                    bet_amount, payout_amount, won_inc, loss_inc, push_inc, bj_inc, payout_amount
+                )
+            )
+
+            # 3. Log granular hand telemetry
+            await cursor.execute(
+                "INSERT INTO blackjack_hand_telemetry ("
+                "guild_id, table_id, table_name, user_id, bet_amount, payout_amount, net_profit, "
+                "result_type, player_cards, player_val, dealer_cards, dealer_val, "
+                "is_doubled, is_split, is_blackjack"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    guild_id, table_id, table_name, user_id, bet_amount, payout_amount, profit,
+                    result_type, player_cards, player_val, dealer_cards, dealer_val,
+                    1 if is_doubled else 0, 1 if is_split else 0, 1 if is_blackjack else 0
+                )
+            )
+            await self.db.commit()
+
+    async def get_user_recent_hands(self, user_id: int, limit: int = 10) -> list[dict]:
+        """Fetches the most recent hands played by a user."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT id, table_name, bet_amount, payout_amount, net_profit, result_type, "
+                "player_cards, player_val, dealer_cards, dealer_val, is_doubled, is_split, "
+                "is_blackjack, timestamp "
+                "FROM blackjack_hand_telemetry WHERE user_id = ? "
+                "ORDER BY id DESC LIMIT ?",
+                (user_id, limit)
+            )
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "table_name": r[1],
+                    "bet_amount": float(r[2]),
+                    "payout_amount": float(r[3]),
+                    "net_profit": float(r[4]),
+                    "result_type": r[5],
+                    "player_cards": r[6],
+                    "player_val": r[7],
+                    "dealer_cards": r[8],
+                    "dealer_val": r[9],
+                    "is_doubled": bool(r[10]),
+                    "is_split": bool(r[11]),
+                    "is_blackjack": bool(r[12]),
+                    "timestamp": r[13]
+                }
+                for r in rows
+            ]
+
+    async def get_blackjack_leaderboards(self, limit: int = 5) -> dict:
+        """Fetches top casino players by balance, total won, and blackjacks."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT user_id, balance, total_won FROM user_economy ORDER BY balance DESC LIMIT ?",
+                (limit,)
+            )
+            top_balance = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT user_id, won, hands_won, biggest_win FROM blackjack_stats ORDER BY won DESC LIMIT ?",
+                (limit,)
+            )
+            top_winners = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT user_id, blackjacks, hands_played FROM blackjack_stats WHERE blackjacks > 0 ORDER BY blackjacks DESC LIMIT ?",
+                (limit,)
+            )
+            top_blackjacks = await cursor.fetchall()
+
+            return {
+                "top_balance": top_balance,
+                "top_winners": top_winners,
+                "top_blackjacks": top_blackjacks
             }

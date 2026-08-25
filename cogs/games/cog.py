@@ -3,6 +3,8 @@ from discord.ext import commands
 from discord import ui
 
 from .connect4 import CFGame, run_mcts
+from .blackjack import TableManager
+from .blackjack_views import BlackjackLobbyView, PublicTableView, PlayerSeatView
 from cogs.utils.constants import Emojis
 
 import discord
@@ -813,6 +815,9 @@ class Games(commands.Cog):
         self.bot = bot
         self.process_executor = ProcessPoolExecutor()
 
+    async def cog_load(self):
+        TableManager().ensure_system_tables(self.bot)
+
     def cog_unload(self):
         self.process_executor.shutdown(wait=False)
 
@@ -833,6 +838,55 @@ class Games(commands.Cog):
         )
 
         await ctx.reply(view=view)
+
+    @commands.hybrid_command(name="daily")
+    async def daily(self, ctx: commands.Context):
+        """Claims your daily 100€ allowance (+5€ per consecutive day streak)."""
+        await ctx.defer(ephemeral=True)
+        success, res = await self.bot.db_manager.claim_daily(ctx.author.id)
+        if success:
+            reward = res["reward"]
+            new_bal = res["new_balance"]
+            streak = res["streak"]
+            next_ts = res["next_claim_timestamp"]
+            await ctx.reply(
+                f"🎉 **Daily Reward Claimed!**\n"
+                f"• Received: **+€{reward:.2f}** (Streak: {streak} days)\n"
+                f"• Wallet Balance: **€{new_bal:,.2f}**\n"
+                f"• Next claim available <t:{next_ts}:R>.",
+                ephemeral=True
+            )
+        else:
+            next_ts = res["next_claim_timestamp"]
+            await ctx.reply(
+                f"⏱️ You already claimed your daily reward!\nNext reward available <t:{next_ts}:R> (in <t:{next_ts}:t>).",
+                ephemeral=True
+            )
+
+    @commands.hybrid_command(name="blackjack", aliases=["bj", "casino"])
+    @commands.guild_only()
+    async def blackjack(self, ctx: commands.Context):
+        """Opens the Blackjack Casino Lounge & Table Browser."""
+        await ctx.defer()
+        view = BlackjackLobbyView(self.bot, ctx.author, guild_id=ctx.guild.id if ctx.guild else None)
+        await view.render_home(ctx.author, guild_id=ctx.guild.id if ctx.guild else None)
+        await ctx.reply(view=view)
+
+    @commands.hybrid_command(name="givemoney", aliases=["grantmoney", "addmoney"])
+    @commands.is_owner()
+    @discord.app_commands.describe(user="The user to send money to", amount="Amount of euros to grant")
+    async def give_money(self, ctx: commands.Context, user: discord.User, amount: float):
+        """[Owner Only] Grants money to any user's economy wallet."""
+        await ctx.defer(ephemeral=True)
+        if amount <= 0:
+            await ctx.reply("❌ Amount must be greater than 0.", ephemeral=True)
+            return
+
+        new_bal = await self.bot.db_manager.adjust_user_balance(user.id, amount)
+        await ctx.reply(
+            f"✅ Granted **+€{amount:,.2f}** to {user.mention}.\n• New Balance: **€{new_bal:,.2f}**",
+            ephemeral=True
+        )
 
 async def setup(bot):
     await bot.add_cog(Games(bot))
