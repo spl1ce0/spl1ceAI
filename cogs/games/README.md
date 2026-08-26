@@ -22,7 +22,7 @@ This package provides interactive multiplayer Discord games with responsive butt
 
 ### 2. Royal Casino Blackjack (`/blackjack`, `/daily`)
 * **Live Multiplayer Tables**: Continuous room loop with betting countdown (10s), single table hosting limit per user, 7-seat casino standard capacity, simultaneous card dealing, and sequential player action turns (`Hit`, `Stand`, `Double Down`, `Split` with 20s timers).
-* **Guaranteed Public Tiers & Auto-Scaling**: Bot automatically provisions 4 standard public table tiers (Bronze `5€`, Silver `10€`, Gold `20€`, Diamond `50€`), automatically spawning `#2`, `#3` overflow rooms when a tier reaches 7/7 seats, and pruning empty duplicates.
+* **Guaranteed Public Tiers & Auto-Scaling**: Bot automatically provisions 4 distinct public table tiers with visual badges (🥉 Bronze `5€`, 🥈 Silver `10€`, 🥇 Gold `20€`, 💎 Diamond `50€`), automatically spawning `#2`, `#3` overflow rooms when a tier reaches 7/7 seats, and pruning empty duplicates.
 * **Public & Private Rooms**: Public tables discoverable in the server lobby browser; Private tables joinable via 4-character invite code (`Join by Code`).
-* **Wallet & Chip Economy**: 1,000€ starting balance for all users, stackable chip wagers (`+5€`, `+10€`, `+50€`, `+100€`, `Custom`), table minimum bets, and `/daily` reward (100€ + 5€ per consecutive streak day).
+* **Wallet & Dynamic Chip Economy**: 1,000€ starting balance for all users, 5-button dynamic betting pad (3 tier-scaled chips + `Custom` + `All In`), table minimum bets, and `/daily` reward (100€ + 5€ per consecutive streak day).
 * **Statistics & Telemetry Audit**: Tracks user balances, lifetime wagers/wins, leaderboards, and logs every individual resolved hand to `blackjack_hand_telemetry` (recording cards, scores, bets, payouts, splits, and doubles).

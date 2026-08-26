@@ -19,10 +19,10 @@ CARD_RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
 
 # Official public tiers guaranteed by the system
 SYSTEM_TIERS = [
-    {"min_bet": 5.0, "name_prefix": "Bronze Table"},
-    {"min_bet": 10.0, "name_prefix": "Silver Table"},
-    {"min_bet": 20.0, "name_prefix": "Gold Table"},
-    {"min_bet": 50.0, "name_prefix": "Diamond Table"},
+    {"min_bet": 5.0, "name_prefix": "🥉 Bronze Table"},
+    {"min_bet": 10.0, "name_prefix": "🥈 Silver Table"},
+    {"min_bet": 20.0, "name_prefix": "🥇 Gold Table"},
+    {"min_bet": 50.0, "name_prefix": "💎 Diamond Table"},
 ]
 
 

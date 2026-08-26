@@ -233,11 +233,12 @@ class BlackjackHomeContainer(ui.Container):
         )
         daily_btn.callback = self._on_claim_daily
 
+        user_mention = self.user.mention if self.user else "Your"
         if is_eligible:
-            bal_text = f"**Balance:**\n€{bal:,.2f}"
+            bal_text = f"**{user_mention}'s balance:**\n€{bal:,.2f}"
         else:
             time_str = f"<t:{next_claim_ts}:R>" if next_claim_ts else "soon"
-            bal_text = f"**Balance:**\n€{bal:,.2f}\n-# Daily claimed • Next in {time_str}"
+            bal_text = f"**{user_mention}'s balance:**\n€{bal:,.2f}\n-# Daily claimed • Next in {time_str}"
 
         self.add_item(ui.Section(ui.TextDisplay(bal_text), accessory=daily_btn))
         self.add_item(ui.Separator())
@@ -327,8 +328,8 @@ class BlackjackBrowserContainer(ui.Container):
                     join_btn = ui.Button(label="Join", style=discord.ButtonStyle.green)
                     join_btn.callback = self._make_join_callback(t)
 
-                # Format: Min 10€ — 0/7 — Table Name      [Join]
-                info_text = f"Min €{t.min_bet:.0f} — {t.seated_count}/{t.max_seats} — **{t.name}**"
+                # Format: **🥉 Bronze Table #1** \n -# Min €5 • 0/7 Seated      [Join]
+                info_text = f"**{t.name}**\n-# Min €{t.min_bet:.0f} • {t.seated_count}/{t.max_seats} Seated"
                 section = ui.Section(ui.TextDisplay(info_text), accessory=join_btn)
                 self.add_item(section)
         else:
@@ -554,7 +555,8 @@ class PublicTableContainer(ui.Container):
         back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
         back_btn.callback = self._on_back_to_browser
 
-        header_text = f"### 🎰 {self.table.name}\n-# {priv_badge} • Min €{self.table.min_bet:.0f} • {self.table.seated_count}/{self.table.max_seats} Players"
+        icon = "" if any(self.table.name.startswith(e) for e in ["🥉", "🥈", "🥇", "💎", "🔒", "🎰"]) else "🎰 "
+        header_text = f"### {icon}{self.table.name}\n-# {priv_badge} • Min €{self.table.min_bet:.0f} • {self.table.seated_count}/{self.table.max_seats} Players"
         self.add_item(ui.Section(ui.TextDisplay(header_text), accessory=back_btn))
         self.add_item(ui.Separator())
 
@@ -739,7 +741,8 @@ class PlayerSeatContainer(ui.Container):
 
     def _build_ui(self):
         priv_badge = f"🔒 Code: `{self.table.invite_code}`" if self.table.is_private else "🌐 Public"
-        header_text = f"### 🎰 {self.table.name}\n-# {priv_badge} • Min €{self.table.min_bet:.0f} • {self.table.seated_count}/{self.table.max_seats} Players"
+        icon = "" if any(self.table.name.startswith(e) for e in ["🥉", "🥈", "🥇", "💎", "🔒", "🎰"]) else "🎰 "
+        header_text = f"### {icon}{self.table.name}\n-# {priv_badge} • Min €{self.table.min_bet:.0f} • {self.table.seated_count}/{self.table.max_seats} Players"
         self.add_item(ui.TextDisplay(header_text))
         self.add_item(ui.Separator())
 
@@ -777,9 +780,21 @@ class PlayerSeatContainer(ui.Container):
         bet_text = f"{bal_line}**Your bet**\n€{self.player.current_bet:.2f}"
         self.add_item(ui.Section(ui.TextDisplay(bet_text), accessory=clear_btn))
 
-        # Chip Buttons Row (+5€, +10€, +50€, +100€, Custom)
+        # Chip Buttons Row (3 tier-scaled chips, Custom, All In)
+        min_b = self.table.min_bet
+        if min_b <= 5:
+            chips = [5, 10, 25]
+        elif min_b <= 10:
+            chips = [10, 25, 50]
+        elif min_b <= 20:
+            chips = [20, 50, 100]
+        elif min_b <= 50:
+            chips = [50, 100, 250]
+        else:
+            chips = [int(min_b), int(min_b * 2), int(min_b * 5)]
+
         chip_row = ui.ActionRow()
-        for amt in [5, 10, 50, 100]:
+        for amt in chips:
             btn = ui.Button(label=f"+{amt}€", style=discord.ButtonStyle.gray)
             btn.callback = self._make_bet_callback(amt)
             chip_row.add_item(btn)
@@ -787,6 +802,10 @@ class PlayerSeatContainer(ui.Container):
         custom_btn = ui.Button(label="Custom", style=discord.ButtonStyle.gray)
         custom_btn.callback = self._on_custom_bet
         chip_row.add_item(custom_btn)
+
+        all_in_btn = ui.Button(label="All In", style=discord.ButtonStyle.gray)
+        all_in_btn.callback = self._on_all_in
+        chip_row.add_item(all_in_btn)
 
         self.add_item(chip_row)
         self.add_item(ui.Separator())
@@ -969,6 +988,30 @@ class PlayerSeatContainer(ui.Container):
 
     async def _on_custom_bet(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CustomBetModal(self.bot, self.table, self.seat_view))
+
+    async def _on_all_in(self, interaction: discord.Interaction):
+        economy = await self.bot.db_manager.get_user_economy(interaction.user.id)
+        balance = economy.get("balance", 0.0)
+
+        if balance < self.table.min_bet:
+            await interaction.response.send_message(
+                f"❌ You do not have enough balance to meet the table minimum bet (€{self.table.min_bet:.2f}).",
+                ephemeral=True
+            )
+            return
+
+        self.table.clear_bet(interaction.user.id)
+        ok, msg, current_bet = self.table.add_bet(interaction.user.id, balance, balance)
+        if not ok:
+            await interaction.response.send_message(f"❌ {msg}", ephemeral=True)
+            return
+
+        self.seat_view.user_balance = balance
+        self.seat_view._update_container()
+        await interaction.response.edit_message(view=self.seat_view)
+        if hasattr(self.bot, '_connection') and hasattr(self.bot._connection, '_view_store') and interaction.message:
+            self.bot._connection._view_store.add_view(self.seat_view, interaction.message.id)
+        await self.table.broadcast_updates()
 
     async def _on_hit(self, interaction: discord.Interaction):
         ok, msg = self.table.player_hit(interaction.user.id)
