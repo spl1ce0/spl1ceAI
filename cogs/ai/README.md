@@ -1,14 +1,47 @@
 # AI Subsystem (`cogs/ai/`)
 
-This package manages all Large Language Model (LLM) communications, multi-tier provider failovers, multimodal file ingestion, and message response orchestration.
+This package manages all Large Language Model (LLM) communications, fixed 3-tier disaster-recovery failover pipelines, weekly token quotas, Bring Your Own Key (BYOK) routing, and message response orchestration.
 
 ---
 
 ## 📁 Files & Structure
 
-* **`cog.py` (`AI`)**: The Discord Cog front-end. Defines `/quota` (`/usage`), `/ask`, `/summarize`, `/summon`, and the `on_message` listener. Handles session lifecycles, duration timers, monthly €5.00 guild budget quota enforcement, warning throttling, and real-time AI transaction telemetry logging (`ai_telemetry`).
-* **`ai.py`**: The core AI processing engine containing model client abstraction classes, prompt builders, failover orchestrators, per-model token/image cost calculators (EUR), and latency/model tracking metadata.
-* **`models.json`**: Model provider catalog defining supported model endpoints, providers (Google Gemini, OpenAI, Anthropic, xAI Grok), API formats, input/output token pricing per 1M tokens in EUR, and capability flags.
+* **`cog.py` (`AI`)**: The Discord Cog front-end. Defines `/quota` (`/usage`), `/ask`, `/summarize`, `/summon`, and the `on_message` listener. Handles session lifecycles, duration timers, weekly token quota checks (Free Snapshot Tier vs Premium Guild Plan vs BYOK), and real-time AI transaction telemetry logging (`ai_telemetry`).
+* **`ai.py`**: The core AI processing engine containing model client abstraction classes, prompt builders with custom server persona injection, 3-tier disaster-resilient failover orchestrators, per-model token/image cost calculators, and latency/model tracking metadata.
+* **`models.json`**: Model catalog defining supported endpoints, providers (Google Gemini, OpenAI, Anthropic, xAI Grok), API formats, and capability flags.
+
+---
+
+## 🛡️ Fixed 3-Tier Disaster-Resilient Pipeline
+
+Standard queries are automatically routed through a non-editable 3-tier pipeline designed for maximum speed, conversational nuance, and zero-downtime reliability:
+
+1. 🥇 **Primary Brain:** `gemini-3.7-flash` (Google) — Fast, natural human conversation with live Google Search grounding.
+2. 🥈 **Intra-Google Fallback:** `gemini-2.5-flash` (Google) — Instant zero-downtime failover within Google Cloud infra if rate limits occur.
+3. 🥉 **Disaster Recovery:** `grok-4.3` (xAI) — Independent cross-provider failover if entire Google cloud region suffers an outage.
+
+---
+
+## 💳 Quota & Monetization Tiers
+
+| Feature | 🆓 Free Snapshot Plan (0.00€) | 👑 Premium Guild Plan (2.99€/mo) | 🔑 BYOK Mode (Bring Your Own Key) |
+| :--- | :--- | :--- | :--- |
+| **Weekly Token Pool** | **100,000 tokens / week** | **500,000 tokens / week** | **Unlimited / Unmetered** |
+| **Reset Cycle** | Mondays 00:00 UTC | Mondays 00:00 UTC | N/A (Billed to user's key) |
+| **AI Model Brain** | `gemini-3.7-flash` | `gemini-3.7-flash` | Selected / Configured provider |
+| **Context Window** | 5 msgs (`/ask`) • 15 msgs (chat) | 30 msgs everywhere | 30 msgs everywhere |
+| **Vision (Images)** | ❌ Disabled (Text-only) | ✅ Full image attachment analysis | ✅ Full image attachment analysis |
+| **Image Generation** | 1 image every 2 weeks | 10 images / week | Unlimited |
+| **Custom Persona** | Default `spl1ceAI` persona | Custom system prompt (via `/settings`) | Custom system prompt (via `/settings`) |
+
+---
+
+## 🎯 Message Trigger Mechanics
+
+1. **Inside ChatBot Channel (`cbc`)**:
+   * Automatically replies **only to direct @mentions and message replies to the bot**. Unrelated channel chatter is ignored.
+2. **Outside ChatBot Channel**:
+   * The bot remains completely idle unless an admin or user runs `/summon` (starts an active listening session that replies to mentions/replies) or a user invokes the explicit `/ask` command.
 
 ---
 
@@ -16,27 +49,16 @@ This package manages all Large Language Model (LLM) communications, multi-tier p
 
 ### 1. `ModelManager`
 * Central router for all AI execution requests.
-* Resolves the server's configured primary and fallback model stack from guild settings (`llm_primary`, `llm_fallback1`, `llm_fallback2`).
-* Executes models sequentially within an `asyncio.wait_for` timeout window. If a model encounters a rate limit, service outage, or timeout, it automatically cascades down to the next fallback model.
+* Executes the 3-tier disaster pipeline sequentially within an `asyncio.wait_for` timeout window.
+* Automatically injects custom server prompts when enabled.
 
 ### 2. `ContextManager`
-* Extracts and standardizes conversation history from Discord channels.
-* Multimodal payload ingestion:
-  * **Images**: Reads raw bytes and attaches mime types for visual models.
+* Extracts and standardizes conversation history with tier-aware depth (5, 15, or 30 messages) and active session age cutoff (45-minute recency window).
+* Non-duplicative reply referencing (`[User] (replying to Target): message`) avoiding redundant quote token burn.
+* Multimodal payload ingestion with `enable_vision` flag:
+  * **Images**: Reads raw bytes and attaches mime types for visual models when vision is enabled (Premium & BYOK).
   * **Code / Text Files (`.py`, `.json`, `.txt`, etc.)**: Reads UTF-8 content and injects it directly as contextual code blocks in the prompt.
-  * **Recent History Attachment Limit (`HISTORY_ATTACHMENT_LIMIT = 3`)**: Automatically scans the last 3 history messages for attachments without causing bandwidth bloat.
+  * **Recent History Attachment Limit (`HISTORY_ATTACHMENT_LIMIT = 3`)**: Automatically scans the last 3 history messages for attachments when vision is active.
 
 ### 3. `ResponseHandler`
-* Manages formatting, model subtext injection (`show_model` setting), single-message delivery (<2000 character limit enforcement without splitting), and Discord reply routing.
-* Respects server configuration flags such as author ping preferences (`reply_ping` setting).
-
----
-
-## 🔄 Supported Model Providers & Classes
-
-| Provider | Class | Protocol / SDK |
-| :--- | :--- | :--- |
-| **Google Gemini** | `GeminiModel` | `google-genai` native SDK |
-| **OpenAI** | `OpenAIModel` | `openai.AsyncOpenAI` (Chat Completions & Responses API) |
-| **Anthropic Claude** | `AnthropicModel` | `anthropic.AsyncAnthropic` |
-| **xAI Grok** | `GrokModel` | `xai-sdk` (OpenAI compatibility layer) |
+* Manages formatting, rich footer subtext injection (`show_model` setting with custom provider emoji, execution latency, and token consumption), hard 800-token completion limits (preventing runaway token burn), and Discord reply routing.

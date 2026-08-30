@@ -11,8 +11,14 @@ class DatabaseManager:
         self.db = db_conn
 
     async def initialize(self) -> None:
-        """Creates tables and runs columns migrations if needed."""
+        """Creates tables, applies performance indices, and runs columns migrations if needed."""
         async with self.db.cursor() as cursor:
+            # --- High-Concurrency Performance PRAGMAs ---
+            await cursor.execute("PRAGMA journal_mode=WAL")
+            await cursor.execute("PRAGMA synchronous=NORMAL")
+            await cursor.execute("PRAGMA foreign_keys=ON")
+            await cursor.execute("PRAGMA busy_timeout=5000")
+
             await cursor.execute(
                 "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT)"
             )
@@ -198,6 +204,24 @@ class DatabaseManager:
                 "blackjacks INTEGER NOT NULL DEFAULT 0, "
                 "biggest_win REAL NOT NULL DEFAULT 0.0)"
             )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS user_blacklist ("
+                "user_id INTEGER PRIMARY KEY, "
+                "reason TEXT, "
+                "blacklisted_by INTEGER, "
+                "timestamp TEXT DEFAULT CURRENT_TIMESTAMP)"
+            )
+
+            # --- Performance Indexes ---
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_economy_balance ON user_economy (balance DESC)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_blackjack_stats_won ON blackjack_stats (won DESC)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_command_telemetry_ts ON command_telemetry (timestamp)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_telemetry_ts ON ai_telemetry (timestamp)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_error_telemetry_ts ON error_telemetry (timestamp)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_game_telemetry_ts ON game_telemetry (timestamp)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_command_telemetry_user ON command_telemetry (user_id)")
+            await cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_telemetry_user ON ai_telemetry (user_id)")
+
             await self.db.commit()
 
         async with self.db.cursor() as cursor:
@@ -280,6 +304,14 @@ class DatabaseManager:
                     st_migrated = True
                 if st_migrated:
                     await self.db.commit()
+
+        async with self.db.cursor() as cursor:
+            await cursor.execute("PRAGMA table_info(ai_telemetry)")
+            ai_cols = [row[1] for row in await cursor.fetchall()]
+            if ai_cols and "prompt_text" not in ai_cols:
+                logger.info("Migration: Adding prompt_text column to ai_telemetry")
+                await cursor.execute("ALTER TABLE ai_telemetry ADD COLUMN prompt_text TEXT")
+                await self.db.commit()
 
     # --- Guild Settings Management ---
     
@@ -437,7 +469,8 @@ class DatabaseManager:
         prompt_chars: int = 0,
         response_chars: int = 0,
         failover_occurred: bool = False,
-        failover_reason: Optional[str] = None
+        failover_reason: Optional[str] = None,
+        prompt_text: Optional[str] = None
     ) -> None:
         """Logs detailed LLM API transaction metrics to ai_telemetry."""
         async with self.db.cursor() as cursor:
@@ -445,12 +478,13 @@ class DatabaseManager:
                 "INSERT INTO ai_telemetry ("
                 "guild_id, channel_id, user_id, model_name, provider, input_tokens, output_tokens, "
                 "estimated_cost, latency_ms, context_messages_count, finish_reason, trigger_type, "
-                "prompt_chars, response_chars, failover_occurred, failover_reason"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "prompt_chars, response_chars, failover_occurred, failover_reason, prompt_text"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     guild_id, channel_id, user_id, model_name, provider, input_tokens, output_tokens,
                     estimated_cost, latency_ms, context_messages_count, finish_reason, trigger_type,
-                    prompt_chars, response_chars, 1 if failover_occurred else 0, failover_reason
+                    prompt_chars, response_chars, 1 if failover_occurred else 0, failover_reason,
+                    prompt_text[:1000] if prompt_text else None
                 )
             )
             await self.db.commit()
@@ -1159,3 +1193,95 @@ class DatabaseManager:
                 "top_winners": top_winners,
                 "top_blackjacks": top_blackjacks
             }
+
+    # --- User Blacklist & Intelligence Dossier ---
+
+    async def get_all_blacklisted_users(self) -> set[int]:
+        """Fetches all blacklisted user IDs for in-memory caching."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT user_id FROM user_blacklist")
+            rows = await cursor.fetchall()
+            return {r[0] for r in rows}
+
+    async def blacklist_user(self, user_id: int, reason: str = "Violated bot usage policies", admin_id: int = 0) -> None:
+        """Globally blacklists a user from interacting with the bot."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT INTO user_blacklist (user_id, reason, blacklisted_by) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET reason = excluded.reason, blacklisted_by = excluded.blacklisted_by",
+                (user_id, reason, admin_id)
+            )
+            await self.db.commit()
+
+    async def unblacklist_user(self, user_id: int) -> None:
+        """Removes a user from the global blacklist."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("DELETE FROM user_blacklist WHERE user_id = ?", (user_id,))
+            await self.db.commit()
+
+    async def get_user_audit_dossier(self, user_id: int) -> dict:
+        """Aggregates deep intelligence on a user across all telemetry streams, commands, and AI queries."""
+        async with self.db.cursor() as cursor:
+            # 1. User Telemetry Profile
+            await cursor.execute("SELECT first_seen, last_seen, total_commands_run FROM user_telemetry WHERE user_id = ?", (user_id,))
+            u_row = await cursor.fetchone()
+            profile = {
+                "first_seen": u_row[0] if u_row else None,
+                "last_seen": u_row[1] if u_row else None,
+                "total_commands": u_row[2] if u_row else 0
+            }
+
+            # 2. Economy Profile
+            await cursor.execute("SELECT balance, total_wagered, total_won, daily_streak FROM user_economy WHERE user_id = ?", (user_id,))
+            e_row = await cursor.fetchone()
+            profile["economy"] = {
+                "balance": e_row[0] if e_row else 1000.0,
+                "total_wagered": e_row[1] if e_row else 0.0,
+                "total_won": e_row[2] if e_row else 0.0,
+                "daily_streak": e_row[3] if e_row else 0
+            }
+
+            # 3. Blacklist Status
+            await cursor.execute("SELECT reason, blacklisted_by, timestamp FROM user_blacklist WHERE user_id = ?", (user_id,))
+            b_row = await cursor.fetchone()
+            profile["blacklist"] = {
+                "is_blacklisted": bool(b_row),
+                "reason": b_row[0] if b_row else None,
+                "blacklisted_by": b_row[1] if b_row else None,
+                "timestamp": b_row[2] if b_row else None
+            }
+
+            # 4. Recent Command Executions (Last 10)
+            await cursor.execute(
+                "SELECT command_name, guild_id, channel_id, execution_time_ms, success, timestamp "
+                "FROM command_telemetry WHERE user_id = ? ORDER BY id DESC LIMIT 10",
+                (user_id,)
+            )
+            profile["recent_commands"] = await cursor.fetchall()
+
+            # 5. Recent AI Queries & Prompts (Last 10)
+            await cursor.execute(
+                "SELECT model_name, provider, prompt_text, input_tokens, output_tokens, latency_ms, guild_id, channel_id, timestamp "
+                "FROM ai_telemetry WHERE user_id = ? ORDER BY id DESC LIMIT 10",
+                (user_id,)
+            )
+            profile["recent_ai"] = await cursor.fetchall()
+
+            # 6. AI Aggregates
+            await cursor.execute(
+                "SELECT COUNT(*), SUM(input_tokens), SUM(output_tokens) FROM ai_telemetry WHERE user_id = ?",
+                (user_id,)
+            )
+            ai_agg = await cursor.fetchone()
+            profile["ai_total_queries"] = ai_agg[0] if ai_agg and ai_agg[0] else 0
+            profile["ai_total_tokens"] = (ai_agg[1] or 0) + (ai_agg[2] or 0) if ai_agg else 0
+
+            # 7. Recent Errors (Last 5)
+            await cursor.execute(
+                "SELECT command_name, error_type, error_message, guild_id, timestamp "
+                "FROM error_telemetry WHERE user_id = ? ORDER BY id DESC LIMIT 5",
+                (user_id,)
+            )
+            profile["recent_errors"] = await cursor.fetchall()
+
+            return profile

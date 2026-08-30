@@ -21,11 +21,10 @@ log = logging.getLogger(__name__)
 
 
 async def get_prefix(bot, message):
-        if not message.guild:
-            return commands.when_mentioned_or(DefaultSettings.PREFIX)(bot, message)
-        
-        custom_prefix = bot.settings_cache.get(message.guild.id, {}).get("prefix", DefaultSettings.PREFIX)
-        return commands.when_mentioned_or(custom_prefix)(bot, message)
+    if not message.guild:
+        return DefaultSettings.PREFIX
+    
+    return bot.settings_cache.get(message.guild.id, {}).get("prefix", DefaultSettings.PREFIX)
 
 class Spl1ceAI(commands.AutoShardedBot):
     def __init__(
@@ -39,6 +38,7 @@ class Spl1ceAI(commands.AutoShardedBot):
 
         super().__init__(
             command_prefix=get_prefix,
+            help_command=None,
             *args, 
             **kwargs
         )
@@ -48,6 +48,7 @@ class Spl1ceAI(commands.AutoShardedBot):
         self.db: asqlite.Connection = None
         self.db_manager = None
         self.settings_cache = {}
+        self.blacklist_cache = set()
 
     async def setup_hook(self) -> None:
         self.db = await asqlite.connect("bot.db")
@@ -55,6 +56,15 @@ class Spl1ceAI(commands.AutoShardedBot):
         self.db_manager = DatabaseManager(self.db)
         
         await self.db_manager.initialize()
+        self.blacklist_cache = await self.db_manager.get_all_blacklisted_users()
+        log.info(f"Loaded {len(self.blacklist_cache)} blacklisted user(s) into cache.")
+
+        # Global command & interaction blacklist guards
+        self.add_check(lambda ctx: ctx.author.id not in self.blacklist_cache)
+
+        async def _global_interaction_check(interaction: discord.Interaction) -> bool:
+            return interaction.user.id not in self.blacklist_cache
+        self.tree.interaction_check = _global_interaction_check
 
         restart_info_str = await self.db_manager.get_system_state('restart_info')
         if restart_info_str:
@@ -74,7 +84,17 @@ class Spl1ceAI(commands.AutoShardedBot):
                 "llm_timeout": row[7],
                 "log_channel": row[8],
                 "show_model": row[9],
-                "reply_ping": row[10]
+                "reply_ping": row[10],
+                "is_premium": row[11] if len(row) > 11 else 0,
+                "custom_prompt": row[12] if len(row) > 12 else None,
+                "byok_gemini_key": row[13] if len(row) > 13 else None,
+                "byok_xai_key": row[14] if len(row) > 14 else None,
+                "byok_openai_key": row[15] if len(row) > 15 else None,
+                "byok_anthropic_key": row[16] if len(row) > 16 else None,
+                "footer_show_icon": row[17] if len(row) > 17 else 1,
+                "footer_show_name": row[18] if len(row) > 18 else 1,
+                "footer_show_tokens": row[19] if len(row) > 19 else 1,
+                "footer_show_latency": row[20] if len(row) > 20 else 1,
             }
 
         for extension in self.initial_extensions:
@@ -194,7 +214,7 @@ async def main():
         # intents
         intents = discord.Intents.default()
         intents.message_content = True
-        exts = ["cogs.games", "cogs.dev", "cogs.fun", "cogs.ai", "cogs.settings", "cogs.logs", "cogs.tools", "cogs.errors", "cogs.analytics"]
+        exts = ["cogs.games", "cogs.dev", "cogs.fun", "cogs.ai", "cogs.settings", "cogs.logs", "cogs.tools", "cogs.errors", "cogs.analytics", "cogs.billing", "cogs.help"]
 
         async with Spl1ceAI(
             # db_pool=pool,

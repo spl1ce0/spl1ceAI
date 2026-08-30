@@ -224,26 +224,24 @@ class BlackjackHomeContainer(ui.Container):
         self.add_item(ui.TextDisplay("### 🎰 Blackjack"))
         self.add_item(ui.Separator())
 
-        # 2. Balance & Daily Section
+        # 2. Balance Section with Wallet Accessory Button
         bal = economy.get("balance", 1000.0)
-        daily_btn = ui.Button(
-            label="Claim Daily (100€)",
-            style=discord.ButtonStyle.green if is_eligible else discord.ButtonStyle.gray,
-            disabled=not is_eligible
-        )
-        daily_btn.callback = self._on_claim_daily
-
-        user_mention = self.user.mention if self.user else "Your"
+        user_name = getattr(self.user, "display_name", "Your")
+        
         if is_eligible:
-            bal_text = f"**{user_mention}'s balance:**\n€{bal:,.2f}"
+            daily_hint = "🎁 *Daily reward ready to claim!*"
         else:
             time_str = f"<t:{next_claim_ts}:R>" if next_claim_ts else "soon"
-            bal_text = f"**{user_mention}'s balance:**\n€{bal:,.2f}\n-# Daily claimed • Next in {time_str}"
+            daily_hint = f"-# Daily claimed • Next in {time_str}"
 
-        self.add_item(ui.Section(ui.TextDisplay(bal_text), accessory=daily_btn))
+        bal_text = f"**{user_name}'s Balance**\n### **{bal:,.2f}€**\n{daily_hint}"
+        wallet_btn = ui.Button(label="Wallet", emoji="💳", style=discord.ButtonStyle.gray)
+        wallet_btn.callback = self._on_wallet
+
+        self.add_item(ui.Section(ui.TextDisplay(bal_text), accessory=wallet_btn))
         self.add_item(ui.Separator())
 
-        # 3. Action Row: Play, Host, Join, 🏆, ℹ️
+        # 3. Action Row: Play, Host, Join, Leaderboard, Info
         nav_row = ui.ActionRow()
 
         play_btn = ui.Button(label="Play", style=discord.ButtonStyle.green)
@@ -268,11 +266,6 @@ class BlackjackHomeContainer(ui.Container):
 
         self.add_item(nav_row)
 
-    async def _on_claim_daily(self, interaction: discord.Interaction):
-        await self.bot.db_manager.claim_daily(interaction.user.id)
-        await self.view.render_home(interaction.user, self.guild_id)
-        await interaction.response.edit_message(view=self.view)
-
     async def _on_play(self, interaction: discord.Interaction):
         await self.view.render_browser(interaction.user, self.guild_id, page=0)
         await interaction.response.edit_message(view=self.view)
@@ -283,12 +276,16 @@ class BlackjackHomeContainer(ui.Container):
     async def _on_join(self, interaction: discord.Interaction):
         await interaction.response.send_modal(JoinCodeModal(self.bot))
 
-    async def _on_info(self, interaction: discord.Interaction):
-        await self.view.render_info(interaction.user, self.guild_id)
+    async def _on_wallet(self, interaction: discord.Interaction):
+        await self.view.render_wallet(interaction.user, self.guild_id)
         await interaction.response.edit_message(view=self.view)
 
     async def _on_leaderboard(self, interaction: discord.Interaction):
         await self.view.render_leaderboard(interaction.user, self.guild_id)
+        await interaction.response.edit_message(view=self.view)
+
+    async def _on_info(self, interaction: discord.Interaction):
+        await self.view.render_info(interaction.user, self.guild_id)
         await interaction.response.edit_message(view=self.view)
 
 
@@ -505,6 +502,128 @@ class BlackjackLeaderboardContainer(ui.Container):
         await interaction.response.edit_message(view=self.view)
 
 
+class BlackjackWalletContainer(ui.Container):
+    def __init__(self, bot, user: discord.User, economy: dict, can_claim: bool, next_claim_ts: Optional[int], guild_id: Optional[int], parent_view):
+        super().__init__()
+        self.bot = bot
+        self.user = user
+        self.economy = economy
+        self.can_claim = can_claim
+        self.next_claim_ts = next_claim_ts
+        self.guild_id = guild_id
+        self.parent_view = parent_view
+        self._build_ui()
+
+    def _build_ui(self):
+        # 1. Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back
+
+        user_name = getattr(self.user, "display_name", str(self.user))
+        header_section = ui.Section(
+            ui.TextDisplay(f"# Wallet\n-# {user_name}"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        # 2. Balance Card
+        balance = self.economy.get("balance", 0.0)
+        total_won = self.economy.get("total_won", 0.0)
+        total_wagered = self.economy.get("total_wagered", 0.0)
+
+        balance_text = (
+            f"**Balance**\n"
+            f"**{balance:,.2f}€**\n"
+            f"-# Lifetime Won: +{total_won:,.2f}€  •  Total Spent: {total_wagered:,.2f}€"
+        )
+        self.add_item(ui.TextDisplay(balance_text))
+        self.add_item(ui.Separator())
+
+        # 3. Daily Reward Section
+        streak = self.economy.get("daily_streak", 0)
+        if self.can_claim:
+            daily_display = ui.TextDisplay(
+                f"**Daily Reward:** 🔥\n"
+                f"Claim now!"
+            )
+            claim_btn = ui.Button(label="Claim", emoji="🎁", style=discord.ButtonStyle.success)
+            claim_btn.callback = self._on_claim_daily
+            self.add_item(ui.Section(daily_display, accessory=claim_btn))
+        else:
+            next_str = f"Next claim <t:{self.next_claim_ts}:R>" if self.next_claim_ts else "Claimed today"
+            daily_display = ui.TextDisplay(
+                f"**Daily Reward:** 🔥\n"
+                f"{next_str}"
+            )
+            claimed_btn = ui.Button(label="Claim", emoji="🎁", style=discord.ButtonStyle.gray, disabled=True)
+            self.add_item(ui.Section(daily_display, accessory=claimed_btn))
+
+        # 4. Action Row Navigation
+        self.add_item(ui.Separator())
+        action_row = ui.ActionRow()
+
+        leaderboard_btn = ui.Button(label="Wealth Leaderboard", emoji="🏆", style=discord.ButtonStyle.gray)
+        leaderboard_btn.callback = self._on_view_wealth_leaderboard
+        action_row.add_item(leaderboard_btn)
+
+        self.add_item(action_row)
+
+    async def _on_back(self, interaction: discord.Interaction):
+        await self.parent_view.render_home(interaction.user, self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_claim_daily(self, interaction: discord.Interaction):
+        await self.bot.db_manager.claim_daily(interaction.user.id)
+        await self.parent_view.render_wallet(interaction.user, self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_view_wealth_leaderboard(self, interaction: discord.Interaction):
+        await self.parent_view.render_wealth_leaderboard(interaction.user, self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class BlackjackWealthLeaderboardContainer(ui.Container):
+    def __init__(self, leaderboard_data: list, bot, user: discord.User, guild_id: Optional[int], parent_view):
+        super().__init__()
+        self.leaderboard_data = leaderboard_data
+        self.bot = bot
+        self.user = user
+        self.guild_id = guild_id
+        self.parent_view = parent_view
+        self._build_ui()
+
+    def _build_ui(self):
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back
+        header_section = ui.Section(
+            ui.TextDisplay("# Wealth Leaderboard\n-# Top Wealthiest Members"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        if not self.leaderboard_data:
+            self.add_item(ui.TextDisplay("*No users registered in economy yet.*"))
+        else:
+            lines = []
+            medals = ["🥇", "🥈", "🥉"]
+            for idx, entry in enumerate(self.leaderboard_data[:10]):
+                user_id = entry["user_id"]
+                user = self.bot.get_user(user_id)
+                name = f"**{user.display_name}**" if user else f"<@{user_id}>"
+                bal = entry.get("balance", 0.0)
+
+                prefix = medals[idx] if idx < 3 else f"`#{idx + 1}`"
+                lines.append(f"{prefix} {name} — **{bal:,.2f}€**")
+
+            self.add_item(ui.TextDisplay("\n".join(lines)))
+
+    async def _on_back(self, interaction: discord.Interaction):
+        await self.parent_view.render_wallet(interaction.user, self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+
 class BlackjackLobbyView(ui.LayoutView):
     def __init__(self, bot, user: discord.User, guild_id: Optional[int] = None):
         super().__init__(timeout=None)
@@ -517,6 +636,19 @@ class BlackjackLobbyView(ui.LayoutView):
         economy = await self.bot.db_manager.get_user_economy(user.id)
         is_eligible, next_ts = await self.bot.db_manager.check_daily_status(user.id)
         container = BlackjackHomeContainer(self.bot, user, economy, is_eligible, next_ts, guild_id)
+        self.add_item(container)
+
+    async def render_wallet(self, user: discord.User, guild_id: Optional[int] = None):
+        self.clear_items()
+        economy = await self.bot.db_manager.get_user_economy(user.id)
+        can_claim, next_ts = await self.bot.db_manager.check_daily_status(user.id)
+        container = BlackjackWalletContainer(self.bot, user, economy, can_claim, next_ts, guild_id, self)
+        self.add_item(container)
+
+    async def render_wealth_leaderboard(self, user: discord.User, guild_id: Optional[int] = None):
+        self.clear_items()
+        leaderboard_data = await self.bot.db_manager.get_wealth_leaderboard(limit=10)
+        container = BlackjackWealthLeaderboardContainer(leaderboard_data, self.bot, user, guild_id, self)
         self.add_item(container)
 
     async def render_browser(self, user: discord.User, guild_id: Optional[int] = None, page: int = 0):

@@ -483,6 +483,78 @@ class Dev(cmds.Cog):
         await ctx.reply(content=view.get_page_content(), view=view)
 
 
+    @cmds.command(name='set_premium', aliases=['setpremium', 'grant_premium'])
+    @cmds.is_owner()
+    async def set_premium(self, ctx: Context, guild: typing.Optional[discord.Guild] = None, status: bool = True):
+        """Grants or revokes Premium status for a server (Owner only).
+        
+        Usage:
+            =set_premium [guild_id] [true/false]
+        """
+        target_guild = guild or ctx.guild
+        if not target_guild:
+            await ctx.reply(f"{Emojis.ERROR} Please specify a valid guild ID or run this command inside a server.")
+            return
+
+        val = 1 if status else 0
+        await self.bot.db_manager.update_guild_setting(target_guild.id, "is_premium", val)
+        self.bot.settings_cache.setdefault(target_guild.id, {})["is_premium"] = val
+        state_str = "👑 **Premium Plan** (500k tokens/wk, 30 msgs context, vision, 10 images/wk)" if status else "🆓 **Free Snapshot Plan**"
+        await ctx.reply(f"✅ Updated **{target_guild.name}** (`{target_guild.id}`) to {state_str}.")
+
+    @cmds.hybrid_command(name="inspect", aliases=["audituser", "userlookup", "whois", "userdossier"])
+    @cmds.is_owner()
+    @discord.app_commands.describe(user="The user ID or mention to audit")
+    async def inspect_user(self, ctx: Context, user: str):
+        """[Owner Only] Deep intelligence audit on any user across telemetry, commands, and AI queries."""
+        await ctx.defer(ephemeral=True)
+        # Parse user ID from string or mention
+        clean_uid = user.strip("<@!>")
+        try:
+            target_uid = int(clean_uid)
+        except ValueError:
+            await ctx.reply("❌ Invalid user ID or mention provided.", ephemeral=True)
+            return
+
+        view = UserAuditLayoutView(self.bot, target_uid)
+        await view.render_user(target_uid)
+        await ctx.reply(view=view, ephemeral=True)
+
+    @cmds.hybrid_command(name="blacklist", aliases=["blockuser", "banuser"])
+    @cmds.is_owner()
+    @discord.app_commands.describe(user="The user to blacklist", reason="Reason for the ban")
+    async def blacklist_command(self, ctx: Context, user: str, *, reason: str = "Violated bot usage policies"):
+        """[Owner Only] Globally blocks a user from using any bot commands or AI interactions."""
+        await ctx.defer(ephemeral=True)
+        clean_uid = user.strip("<@!>")
+        try:
+            target_uid = int(clean_uid)
+        except ValueError:
+            await ctx.reply("❌ Invalid user ID or mention.", ephemeral=True)
+            return
+
+        await self.bot.db_manager.blacklist_user(target_uid, reason=reason, admin_id=ctx.author.id)
+        self.bot.blacklist_cache.add(target_uid)
+        await ctx.reply(f"🚫 **User `{target_uid}` is now globally blacklisted.**\n-# Reason: *{reason}*", ephemeral=True)
+
+    @cmds.hybrid_command(name="unblacklist", aliases=["unblockuser", "unbanuser"])
+    @cmds.is_owner()
+    @discord.app_commands.describe(user="The user to unblacklist")
+    async def unblacklist_command(self, ctx: Context, user: str):
+        """[Owner Only] Removes a user from the global blacklist."""
+        await ctx.defer(ephemeral=True)
+        clean_uid = user.strip("<@!>")
+        try:
+            target_uid = int(clean_uid)
+        except ValueError:
+            await ctx.reply("❌ Invalid user ID or mention.", ephemeral=True)
+            return
+
+        await self.bot.db_manager.unblacklist_user(target_uid)
+        self.bot.blacklist_cache.discard(target_uid)
+        await ctx.reply(f"🟢 **User `{target_uid}` has been unblacklisted.**", ephemeral=True)
+
+
 class LogFileSelect(discord.ui.Select):
     def __init__(self, current_file):
         options = [
@@ -691,6 +763,18 @@ class AnalyticsLayoutView(ui.LayoutView):
     async def render_heatmap(self):
         self.clear_items()
         container = await AnalyticsHeatmapContainer.create(self)
+        self.add_item(container)
+
+    async def render_user_audit(self, user_id: int):
+        self.clear_items()
+        dossier = await self.bot.db_manager.get_user_audit_dossier(user_id)
+        target_user = self.bot.get_user(user_id)
+        if not target_user:
+            try:
+                target_user = await self.bot.fetch_user(user_id)
+            except Exception:
+                target_user = None
+        container = UserAuditContainer(self.bot, user_id, dossier, target_user=target_user, parent_view=self, back_to_users=True)
         self.add_item(container)
 
 
@@ -915,6 +999,10 @@ class AnalyticsUsersContainer(ui.Container):
         back_btn.callback = self._on_back_click
         nav_row.add_item(back_btn)
 
+        inspect_btn = ui.Button(label="Inspect User", emoji="🔍", style=discord.ButtonStyle.primary)
+        inspect_btn.callback = self._on_inspect_click
+        nav_row.add_item(inspect_btn)
+
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
@@ -930,9 +1018,234 @@ class AnalyticsUsersContainer(ui.Container):
         await self.view.render_home()
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
 
+    async def _on_inspect_click(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(InspectUserModal(self.bot, self.view))
+
     async def _on_refresh_click(self, interaction: discord.Interaction):
         await self.view.render_users()
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
+
+class InspectUserModal(ui.Modal, title="Inspect User Dossier"):
+    user_input = ui.TextInput(
+        label="User ID or Mention",
+        placeholder="e.g. 123456789012345678 or @username",
+        max_length=40,
+        required=True
+    )
+
+    def __init__(self, bot, analytics_view):
+        super().__init__()
+        self.bot = bot
+        self.analytics_view = analytics_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        val = self.user_input.value.strip("<@!> ")
+        try:
+            target_uid = int(val)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid user ID or mention provided.", ephemeral=True)
+            return
+
+        await self.analytics_view.render_user_audit(target_uid)
+        await interaction.response.edit_message(view=self.analytics_view)
+
+
+class BlacklistModal(ui.Modal, title="Blacklist User"):
+    reason_input = ui.TextInput(
+        label="Reason for Blacklist",
+        placeholder="e.g. Malicious prompts, spam, abuse",
+        max_length=200,
+        required=False
+    )
+
+    def __init__(self, bot, target_user_id: int, parent_view):
+        super().__init__()
+        self.bot = bot
+        self.target_user_id = target_user_id
+        self.parent_view = parent_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        reason = self.reason_input.value.strip() or "Violated bot usage policies"
+        await self.bot.db_manager.blacklist_user(self.target_user_id, reason=reason, admin_id=interaction.user.id)
+        self.bot.blacklist_cache.add(self.target_user_id)
+        
+        if hasattr(self.parent_view, "render_user_audit"):
+            await self.parent_view.render_user_audit(self.target_user_id)
+        elif hasattr(self.parent_view, "render_user"):
+            await self.parent_view.render_user(self.target_user_id)
+
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class UserAuditContainer(ui.Container):
+    def __init__(self, bot, user_id: int, dossier: dict, target_user: Optional[discord.User] = None, parent_view = None, back_to_users: bool = False):
+        super().__init__()
+        self.bot = bot
+        self.user_id = user_id
+        self.dossier = dossier
+        self.target_user = target_user
+        self.parent_view = parent_view
+        self.back_to_users = back_to_users
+        self._build_ui()
+
+    def _build_ui(self):
+        user_name = f"{self.target_user} ({self.target_user.display_name})" if self.target_user else f"User ID `{self.user_id}`"
+        is_bl = self.dossier.get("blacklist", {}).get("is_blacklisted", False)
+        bl_badge = "🚨 **BLACKLISTED**" if is_bl else "🟢 **CLEAR**"
+
+        if self.back_to_users and self.parent_view:
+            back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+            back_btn.callback = self._on_back_to_users
+            header_section = ui.Section(
+                ui.TextDisplay(f"### 🔍 User Intelligence Dossier\n-# Target: {user_name} • Status: {bl_badge}"),
+                accessory=back_btn
+            )
+            self.add_item(header_section)
+        else:
+            self.add_item(ui.TextDisplay(f"### 🔍 User Intelligence Dossier\n-# Target: {user_name} • Status: {bl_badge}"))
+
+        self.add_item(ui.Separator())
+
+        # 2. Identity & Shared Guilds
+        created_str = f"<t:{int(self.target_user.created_at.timestamp())}:R>" if self.target_user else "Unknown"
+        fseen = self.dossier.get("first_seen")
+        fseen_str = f"<t:{int(datetime.datetime.fromisoformat(fseen.replace('Z', '+00:00')).timestamp())}:R>" if fseen else "Never"
+        lseen = self.dossier.get("last_seen")
+        lseen_str = f"<t:{int(datetime.datetime.fromisoformat(lseen.replace('Z', '+00:00')).timestamp())}:R>" if lseen else "Never"
+        
+        mutual_guilds = [g for g in self.bot.guilds if g.get_member(self.user_id)]
+        if mutual_guilds:
+            guild_list_str = ", ".join(f"**{g.name}** (`{g.id}`)" for g in mutual_guilds[:6])
+            if len(mutual_guilds) > 6:
+                guild_list_str += f" *(+{len(mutual_guilds) - 6} more)*"
+        else:
+            guild_list_str = "*No mutual servers discovered (DM only or left guild)*"
+
+        overview_text = (
+            f"**Account Created:** {created_str} • **Total Commands:** `{self.dossier.get('total_commands', 0):,}`\n"
+            f"**Activity Window:** First seen {fseen_str} • Last seen {lseen_str}\n"
+            f"**Shared Servers ({len(mutual_guilds)}):** {guild_list_str}"
+        )
+        self.add_item(ui.TextDisplay(overview_text))
+        self.add_item(ui.Separator())
+
+        # 3. AI Intelligence & Query Logs
+        ai_queries = self.dossier.get("recent_ai", [])
+        total_ai_queries = self.dossier.get("ai_total_queries", 0)
+        total_ai_tokens = self.dossier.get("ai_total_tokens", 0)
+
+        ai_header = f"**🤖 AI Queries ({total_ai_queries:,} total • {total_ai_tokens:,} tokens):**"
+        ai_lines = []
+        for model_name, provider, ptext, itok, otok, lat, gid, cid, ts in ai_queries[:4]:
+            guild_obj = self.bot.get_guild(gid) if gid else None
+            g_name = f"'{guild_obj.name}'" if guild_obj else f"Guild {gid}"
+            try:
+                dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+            except Exception:
+                t_str = ts
+            
+            p_snippet = f'"{ptext[:95]}..."' if ptext else "*[No prompt recorded]*"
+            ai_lines.append(f"• {p_snippet}\n  -# ↳ {model_name} • {(itok or 0) + (otok or 0)} tok ({lat}ms) in {g_name} • {t_str}")
+
+        ai_content = "\n".join(ai_lines) if ai_lines else "*No AI queries logged for this user.*"
+        self.add_item(ui.TextDisplay(f"{ai_header}\n{ai_content}"))
+        self.add_item(ui.Separator())
+
+        # 4. Recent Command Executions
+        cmd_rows = self.dossier.get("recent_commands", [])
+        cmd_lines = []
+        for cname, gid, cid, ex_time, succ, ts in cmd_rows[:4]:
+            guild_obj = self.bot.get_guild(gid) if gid else None
+            g_name = f"'{guild_obj.name}'" if guild_obj else f"Guild {gid}"
+            status_icon = "✅" if succ else "❌"
+            try:
+                dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+            except Exception:
+                t_str = ts
+            cmd_lines.append(f"• `{cname}` {status_icon} ({ex_time}ms) in {g_name} • {t_str}")
+
+        cmd_content = "\n".join(cmd_lines) if cmd_lines else "*No command execution history.*"
+        self.add_item(ui.TextDisplay(f"**⌨️ Recent Commands:**\n{cmd_content}"))
+        self.add_item(ui.Separator())
+
+        # 5. Economy Snapshot
+        econ = self.dossier.get("economy", {})
+        bal = econ.get("balance", 1000.0)
+        twon = econ.get("total_won", 0.0)
+        tspent = econ.get("total_wagered", 0.0)
+        streak = econ.get("daily_streak", 0)
+        econ_text = f"**💳 Wallet:** **{bal:,.2f}€** • **Won:** `+{twon:,.2f}€` • **Spent:** `{tspent:,.2f}€` • **Streak:** `🔥 {streak}`"
+        self.add_item(ui.TextDisplay(econ_text))
+        self.add_item(ui.Separator())
+
+        # 6. Action Row: Blacklist / Unblacklist & Reload
+        action_row = ui.ActionRow()
+        if is_bl:
+            unbl_btn = ui.Button(label="Unblacklist User", emoji="🟢", style=discord.ButtonStyle.green)
+            unbl_btn.callback = self._on_unblacklist_click
+            action_row.add_item(unbl_btn)
+        else:
+            bl_btn = ui.Button(label="Blacklist User", emoji="🚫", style=discord.ButtonStyle.danger)
+            bl_btn.callback = self._on_blacklist_click
+            action_row.add_item(bl_btn)
+
+        ref_btn = ui.Button(label="Reload", emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_reload_click
+        action_row.add_item(ref_btn)
+
+        self.add_item(action_row)
+
+    async def _on_back_to_users(self, interaction: discord.Interaction):
+        await self.parent_view.render_users()
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_blacklist_click(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(BlacklistModal(self.bot, self.user_id, self.parent_view))
+
+    async def _on_unblacklist_click(self, interaction: discord.Interaction):
+        await self.bot.db_manager.unblacklist_user(self.user_id)
+        self.bot.blacklist_cache.discard(self.user_id)
+        if hasattr(self.parent_view, "render_user_audit"):
+            await self.parent_view.render_user_audit(self.user_id)
+        elif hasattr(self.parent_view, "render_user"):
+            await self.parent_view.render_user(self.user_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_reload_click(self, interaction: discord.Interaction):
+        if hasattr(self.parent_view, "render_user_audit"):
+            await self.parent_view.render_user_audit(self.user_id)
+        elif hasattr(self.parent_view, "render_user"):
+            await self.parent_view.render_user(self.user_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class UserAuditLayoutView(ui.LayoutView):
+    def __init__(self, bot, user_id: int, timeout=180):
+        super().__init__(timeout=timeout)
+        self.bot = bot
+        self.user_id = user_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message(f"{Emojis.ERROR} This dossier is developer-only.", ephemeral=True)
+            return False
+        return True
+
+    async def render_user(self, user_id: int):
+        self.clear_items()
+        self.user_id = user_id
+        dossier = await self.bot.db_manager.get_user_audit_dossier(user_id)
+        target_user = self.bot.get_user(user_id)
+        if not target_user:
+            try:
+                target_user = await self.bot.fetch_user(user_id)
+            except Exception:
+                target_user = None
+        container = UserAuditContainer(self.bot, user_id, dossier, target_user=target_user, parent_view=self, back_to_users=False)
+        self.add_item(container)
 
 
 class AnalyticsAIContainer(ui.Container):
@@ -1473,6 +1786,22 @@ class AnalyticsHeatmapContainer(ui.Container):
     async def _on_refresh_click(self, interaction: discord.Interaction):
         await self.view.render_heatmap()
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
+    @cmds.hybrid_command(name="givemoney", aliases=["grantmoney", "addmoney", "givecoins"])
+    @cmds.is_owner()
+    @discord.app_commands.describe(user="The user to send money to", amount="Amount of euros to grant")
+    async def give_money(self, ctx: Context, user: discord.User, amount: float):
+        """[Owner Only] Grants money to any user's economy wallet."""
+        await ctx.defer(ephemeral=True)
+        if amount <= 0:
+            await ctx.reply("❌ Amount must be greater than 0.", ephemeral=True)
+            return
+
+        new_bal = await self.bot.db_manager.adjust_user_balance(user.id, amount)
+        await ctx.reply(
+            f"✅ Granted **+{amount:,.2f}€** to {user.mention}.\n• New Balance: **{new_bal:,.2f}€**",
+            ephemeral=True
+        )
 
 
 async def setup(bot):

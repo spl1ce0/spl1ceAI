@@ -21,6 +21,7 @@ from cogs.utils.exceptions import (
     AISafetyBlockedError,
     AIConfigurationError
 )
+from cogs.utils.constants import Emojis
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,12 @@ class Model(ABC):
             self.system_instruction_template = system_inst
         self.clients = clients
         
-    def _get_system_instructions(self) -> str:
+    def _get_system_instructions(self, custom_prompt: typing.Optional[str] = None) -> str:
         today_str = datetime.datetime.now().strftime("%A, %B %d, %Y")
-        if self.system_instruction_template:
-            return self.system_instruction_template.format(today_str=today_str)
-        return ""
+        base = self.system_instruction_template.format(today_str=today_str) if self.system_instruction_template else ""
+        if custom_prompt:
+            base += f"\n\nSERVER CUSTOM INSTRUCTIONS:\n{custom_prompt.strip()}"
+        return base
 
     def calculate_cost(self, prompt_tokens: int, completion_tokens: int, has_image: bool = False) -> float:
         p_tok = prompt_tokens or 0
@@ -102,13 +104,13 @@ class Model(ABC):
         return round(in_cost + out_cost + img_cost, 6)
 
     @abstractmethod
-    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
         pass
 
 
-    async def query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, image_quota_checker: typing.Optional[typing.Callable] = None) -> AIResponse:
         # 1. Run provider-specific text query
-        response = await self._execute_query(contents, timeout)
+        response = await self._execute_query(contents, timeout, custom_prompt=custom_prompt)
         response.model_name = self.name
         response.provider = self.provider
         
@@ -125,6 +127,15 @@ class Model(ABC):
                     
                 # Call image generation (only if supported)
                 if self.supports_image_gen:
+                    if image_quota_checker:
+                        allowed, reason, reset_ts = await image_quota_checker()
+                        if not allowed:
+                            logger.info(f"Image generation blocked due to quota: {reason}")
+                            reset_str = f" Next available <t:{reset_ts}:R>." if reset_ts else ""
+                            limit_note = f"\n-# ⚠️ **Image generation limit reached:** {reason}{reset_str}"
+                            response.text = (response.text or "") + limit_note
+                            return response
+
                     logger.info(f"Image generation request detected in model response: {image_prompt}")
                     img_bytes, filename = await self._generate_image(image_prompt)
                     if img_bytes:
@@ -147,7 +158,7 @@ class Model(ABC):
 
 class GeminiModel(Model):
     
-    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
         client = self.clients.get("gemini")
         if not client:
             raise AIConfigurationError("Gemini client is not configured/available.")
@@ -165,8 +176,9 @@ class GeminiModel(Model):
             
         try:
             config = types.GenerateContentConfig(
-                system_instruction=self._get_system_instructions(),
-                tools=config_tools
+                system_instruction=self._get_system_instructions(custom_prompt),
+                tools=config_tools,
+                max_output_tokens=800
             )
             
             gemini_contents = []
@@ -189,7 +201,7 @@ class GeminiModel(Model):
                 
             prompt_tokens = (response.usage_metadata.prompt_token_count or 0) if response.usage_metadata else 0
             completion_tokens = (response.usage_metadata.candidates_token_count or 0) if response.usage_metadata else 0
-            return AIResponse(response.text, prompt_tokens, completion_tokens, model_name=self.model_id)
+            return AIResponse(response.text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
             
         except APIError as e:
             code = getattr(e, 'code', None)
@@ -210,26 +222,26 @@ class GeminiModel(Model):
         if not client:
             return None, None
         try:
-            logger.info(f"Generating image via Gemini Imagen for prompt: {prompt}")
-            image_response = await client.aio.models.generate_images(
-                model='imagen-4.0-generate-001',
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    output_mime_type='image/jpeg'
-                )
+            logger.info(f"Generating image via Gemini for prompt: {prompt}")
+            response = await client.aio.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=prompt
             )
-            if image_response and image_response.generated_images:
-                img_bytes = image_response.generated_images[0].image.image_bytes
-                return img_bytes, "generated_image.jpg"
+            if response and response.candidates and response.candidates[0].content:
+                for part in response.candidates[0].content.parts:
+                    if getattr(part, "inline_data", None) and part.inline_data.data:
+                        img_bytes = part.inline_data.data
+                        mime = getattr(part.inline_data, "mime_type", "image/png")
+                        ext = "png" if "png" in mime.lower() else "jpg"
+                        return img_bytes, f"generated_image.{ext}"
         except Exception as e:
             logger.error(f"Gemini Image generation failed: {e}")
         return None, None
 
 class OpenAIModel(Model):
-    def _convert_prompt(self, contents: list, is_responses_api: bool = False) -> list:
+    def _convert_prompt(self, contents: list, is_responses_api: bool = False, custom_prompt: typing.Optional[str] = None) -> list:
         messages = [
-            {"role": "system", "content": self._get_system_instructions()}
+            {"role": "system", "content": self._get_system_instructions(custom_prompt)}
         ]
         openai_contents = []
         for item in contents:
@@ -273,7 +285,7 @@ class OpenAIModel(Model):
         messages.append({"role": "user", "content": openai_contents})
         return messages
 
-    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
         client = self.clients.get("openai")
         if not client:
             raise AIConfigurationError("OpenAI client is not configured/available.")
@@ -300,7 +312,7 @@ class OpenAIModel(Model):
                 response = await client.chat.completions.create(
                     model=self.model_id,
                     messages=messages,
-                    max_completion_tokens=2048,
+                    max_completion_tokens=800,
                     temperature=1.2,
                     presence_penalty=0.5
                 )
@@ -311,7 +323,7 @@ class OpenAIModel(Model):
             if not text:
                 raise AISafetyBlockedError("OpenAI response blocked by safety filters.")
             
-            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.model_id)
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
         except openai.RateLimitError as e:
             raise AIRateLimitError("OpenAI rate limit exceeded") from e
         except (openai.APIConnectionError, openai.APITimeoutError) as e:
@@ -400,7 +412,7 @@ class AnthropicModel(Model):
         messages.append({"role": "user", "content": anthropic_contents})
         return messages
 
-    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
         client = self.clients.get("anthropic")
         if not client:
             raise AIConfigurationError("Anthropic client is not configured/available.")
@@ -421,9 +433,9 @@ class AnthropicModel(Model):
                 
             response = await client.messages.create(
                 model=self.model_id,
-                system=self._get_system_instructions(),
+                system=self._get_system_instructions(custom_prompt),
                 messages=messages,
-                max_tokens=2048,
+                max_tokens=800,
                 temperature=1.0,
                 tools=config_tools if config_tools else None
             )
@@ -438,7 +450,7 @@ class AnthropicModel(Model):
             prompt_tokens = response.usage.input_tokens if response.usage else 0
             completion_tokens = response.usage.output_tokens if response.usage else 0
             
-            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.model_id)
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
         except anthropic.RateLimitError as e:
             raise AIRateLimitError("Anthropic rate limit exceeded") from e
         except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
@@ -458,7 +470,7 @@ class AnthropicModel(Model):
             raise AIError(f"Unexpected error in Anthropic provider: {e}") from e
 
 class GrokModel(Model):
-    async def _execute_query(self, contents: list, timeout: float = 15.0) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
         client = self.clients.get("grok")
         if not client:
             raise AIConfigurationError("Grok client is not configured/available.")
@@ -481,7 +493,7 @@ class GrokModel(Model):
                 model=self.model_id,
                 tools=config_tools if config_tools else None
             )
-            chat.append(system(self._get_system_instructions()))
+            chat.append(system(self._get_system_instructions(custom_prompt)))
             
             user_args = []
             for item in query_contents:
@@ -501,7 +513,7 @@ class GrokModel(Model):
             prompt_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') and response.usage else 0
             completion_tokens = response.usage.completion_tokens if hasattr(response, 'usage') and response.usage else 0
             
-            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.model_id)
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
         except Exception as e:
             msg = str(e)
             if "RESOURCE_EXHAUSTED" in msg or "429" in msg:
@@ -600,6 +612,10 @@ class ModelManager:
         else:
             logger.warning("GROK_API_KEY / XAI_API_KEY not found in environment variables.")
             
+        default_config = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models.json")
+        if os.path.exists(default_config):
+            self.load_config(default_config)
+
     def load_config(self, filepath: str):
         with open(filepath, "r", encoding="utf-8") as f:
             config_data = json.load(f)
@@ -618,8 +634,8 @@ class ModelManager:
                 continue
             self.models[name] = model_class(name, config, self.clients, default_instruction=default_inst)
 
-    async def execute(self, guild_settings: dict, contents: list) -> AIResponse:
-        """Consolidates fallback settings resolution and pipeline execution logic."""
+    async def execute(self, guild_settings: dict, contents: list, image_quota_checker: typing.Optional[typing.Callable] = None) -> AIResponse:
+        """Consolidates fixed 3-tier resilient failover pipeline execution (with BYOK support)."""
         from cogs.utils.exceptions import (
             AIError,
             AIRateLimitError,
@@ -628,28 +644,14 @@ class ModelManager:
             AIConfigurationError
         )
         
-        raw_stack = [
-            guild_settings.get("llm_primary", "gemini-flash-lite-latest"),
-            guild_settings.get("llm_backup1", "gpt-5.4-mini"),
-            guild_settings.get("llm_backup2", "claude-haiku-4-5-20251001")
-        ]
+        # 1. Custom server prompt add-on (for Premium / BYOK)
+        custom_prompt = guild_settings.get("custom_prompt") if (guild_settings.get("is_premium") or any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key"])) else None
         
-        legacy_map = {
-            "gemini": "gemini-flash-lite-latest",
-            "openai": "gpt-5.4-mini",
-            "anthropic": "claude-haiku-4-5-20251001",
-            "grok": "grok-4.3"
-        }
-        
-        model_names = []
-        for provider in raw_stack:
-            if provider and provider != "disabled":
-                mapped = legacy_map.get(provider, provider)
-                model_names.append(mapped)
-                
-        if not model_names:
-            model_names = ["gemini-flash-lite-latest"]
-            
+        # 2. Fixed 3-Tier Disaster-Resilient Pipeline
+        # Tier 1 (Primary): Gemini 3.7 Flash
+        # Tier 2 (Intra-Google Fallback): Gemini 2.5 Flash
+        # Tier 3 (Cross-Provider Disaster Recovery): Grok 4.3 (xAI)
+        model_names = ["gemini-3.7-flash", "gemini-2.5-flash", "grok-4.3"]
         timeout = float(guild_settings.get("llm_timeout", 15))
         
         last_exception = None
@@ -663,7 +665,7 @@ class ModelManager:
                 actual_timeout = timeout + 90.0 if model.supports_image_gen else timeout
                 logger.info(f"Attempting response using model: {name} (timeout: {actual_timeout}s)")
                 response = await asyncio.wait_for(
-                    model.query(contents, timeout=actual_timeout),
+                    model.query(contents, timeout=actual_timeout, custom_prompt=custom_prompt, image_quota_checker=image_quota_checker),
                     timeout=float(actual_timeout)
                 )
                 if name != model_names[0]:
@@ -727,7 +729,7 @@ class ContextManager:
     def format_history(cls, message_list: list) -> str:
         result = ""
         for message in message_list:
-            sender = message.author
+            sender = getattr(message.author, "display_name", str(message.author))
             content = message.content or ""
             
             attachments_str = ""
@@ -740,33 +742,20 @@ class ContextManager:
                         att_types.append(f"[{att.filename}]")
                 attachments_str = " " + " ".join(att_types)
 
+            reply_note = ""
             if message.reference is not None:
                 ref_message = message.reference.resolved
                 if ref_message is not None and not isinstance(ref_message, discord.DeletedReferencedMessage): 
-                    ref_author = ref_message.author 
-                    ref_content = ref_message.content or ""
-                    
-                    ref_attachments_str = ""
-                    if ref_message.attachments:
-                        ref_att_types = []
-                        for att in ref_message.attachments:
-                            if cls._is_image(att):
-                                ref_att_types.append("[Image]")
-                            else:
-                                ref_att_types.append(f"[{att.filename}]")
-                        ref_attachments_str = " " + " ".join(ref_att_types)
-                        
-                    ref_text = (ref_content + ref_attachments_str).strip() or "[Attachment/Embed]"
-                    if len(ref_text) > 100:                                                                                                  
-                        ref_text = ref_text[:97] + "..."                                                                                  
-                    result += f"> [{ref_author}]: \"{ref_text}\"\n"    
+                    ref_author = getattr(ref_message.author, "display_name", str(ref_message.author))
+                    reply_note = f" (replying to {ref_author})"
             
             msg_text = (content + attachments_str).strip()
-            result += f"[{sender}]: {msg_text}\n"
+            if msg_text:
+                result += f"[{sender}]{reply_note}: {msg_text}\n"
         return result
 
     @classmethod
-    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str, slash_attachments: list = None) -> list:
+    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str, slash_attachments: list = None, enable_vision: bool = True) -> list:
         contents = []
         processed_ids = set()
         
@@ -792,11 +781,12 @@ class ContextManager:
             except Exception as e:
                 logger.error(f"Failed to resolve reply reference: {e}")
                 
-        # Add attachments from the last N history messages (Smart Limit)
-        recent_history = history[-cls.HISTORY_ATTACHMENT_LIMIT:] if history else []
-        for h_msg in recent_history:
-            if h_msg.attachments:
-                attachments_to_read.extend(h_msg.attachments)
+        # Add attachments from recent history (only if vision enabled)
+        if enable_vision:
+            recent_history = history[-cls.HISTORY_ATTACHMENT_LIMIT:] if history else []
+            for h_msg in recent_history:
+                if h_msg.attachments:
+                    attachments_to_read.extend(h_msg.attachments)
 
         # 2. Process gathered attachments (de-duplicating by ID)
         for att in attachments_to_read:
@@ -806,13 +796,14 @@ class ContextManager:
                     continue
                 processed_ids.add(att_id)
             
-            # Case A: Image attachment
+            # Case A: Image attachment (only process if vision is enabled)
             if cls._is_image(att):
-                try:
-                    img_bytes = await att.read()
-                    contents.append({"data": img_bytes, "mime_type": cls._get_mime_type(att)})
-                except Exception as e:
-                    logger.error(f"Failed to read image attachment {att.filename}: {e}")
+                if enable_vision:
+                    try:
+                        img_bytes = await att.read()
+                        contents.append({"data": img_bytes, "mime_type": cls._get_mime_type(att)})
+                    except Exception as e:
+                        logger.error(f"Failed to read image attachment {att.filename}: {e}")
                     
             # Case B: Text / Code attachment (.py, .txt, .json, etc.)
             elif cls._is_text_file(att):
@@ -847,13 +838,19 @@ class ResponseHandler:
             
         clean_text = response.text
         
-        # Check show_model and reply_ping settings
-        show_model = 1
+        footer_show_icon = 1
+        footer_show_name = 1
+        footer_show_tokens = 1
+        footer_show_latency = 1
         reply_ping = True
+
         guild_id = message_or_ctx.guild.id if getattr(message_or_ctx, 'guild', None) else None
         if self.bot and guild_id:
             guild_settings = self.bot.settings_cache.get(guild_id, {})
-            show_model = guild_settings.get("show_model", 1)
+            footer_show_icon = guild_settings.get("footer_show_icon", 1)
+            footer_show_name = guild_settings.get("footer_show_name", 1)
+            footer_show_tokens = guild_settings.get("footer_show_tokens", 1)
+            footer_show_latency = guild_settings.get("footer_show_latency", 1)
             reply_ping = guild_settings.get("reply_ping", 1) == 1
 
         file = None
@@ -861,7 +858,59 @@ class ResponseHandler:
             file = discord.File(io.BytesIO(response.image_bytes), filename=response.image_filename or "generated_image.jpg")
 
         if clean_text:
-            suffix = f"\n-# {response.model_name}" if (response.model_name and show_model == 1) else ""
+            # 1. Resolve Provider Icon
+            provider = (getattr(response, "provider", "") or "").lower()
+            model_name_lower = (response.model_name or "").lower()
+            if "gemini" in provider or "gemini" in model_name_lower or "google" in provider:
+                provider_icon = Emojis.GEMINI
+            elif "openai" in provider or "gpt" in model_name_lower or "chatgpt" in provider:
+                provider_icon = Emojis.CHATGPT
+            elif "anthropic" in provider or "claude" in model_name_lower:
+                provider_icon = Emojis.CLAUDE
+            elif "xai" in provider or "grok" in model_name_lower:
+                provider_icon = Emojis.GROK
+            elif "deepseek" in provider or "deepseek" in model_name_lower:
+                provider_icon = Emojis.DEEPSEEK
+            else:
+                provider_icon = "🤖"
+
+            # 2. Format Latency
+            latency_ms = getattr(response, "latency_ms", None)
+            latency_str = ""
+            if latency_ms is not None and latency_ms > 0:
+                if latency_ms >= 1000:
+                    latency_str = f"{latency_ms / 1000.0:.1f}s"
+                else:
+                    latency_str = f"{latency_ms}ms"
+
+            # 3. Format Token Count
+            in_tok = 0
+            out_tok = 0
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                in_tok = response.usage_metadata.prompt_token_count or 0
+                out_tok = response.usage_metadata.candidates_token_count or 0
+            total_tok = in_tok + out_tok
+            token_str = f"{total_tok:,} tokens" if total_tok > 0 else ""
+
+            # 4. Construct Footer Elements based on active toggles
+            parts = []
+            name_part = response.model_name if (response.model_name and footer_show_name == 1) else ""
+            icon_part = provider_icon if (footer_show_icon == 1) else ""
+
+            if icon_part and name_part:
+                parts.append(f"{icon_part} {name_part}")
+            elif icon_part:
+                parts.append(f"{icon_part}")
+            elif name_part:
+                parts.append(f"{name_part}")
+
+            if token_str and footer_show_tokens == 1:
+                parts.append(token_str)
+            if latency_str and footer_show_latency == 1:
+                parts.append(latency_str)
+
+            footer_text = " • ".join(parts)
+            suffix = f"\n-# {footer_text}" if footer_text else ""
             max_body = 2000 - len(suffix)
             if len(clean_text) > max_body:
                 clean_text = clean_text[:max_body - 3] + "..."

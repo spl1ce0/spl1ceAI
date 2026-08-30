@@ -13,15 +13,82 @@ from cogs.utils.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+
+def format_cooldown_error(retry_after: float) -> str:
+    retry_ts = int(discord.utils.utcnow().timestamp() + retry_after)
+    return (
+        f"### ⏱️ Command on Cooldown\n"
+        f"You are using this command too fast.\n"
+        f"Available again <t:{retry_ts}:R> (in `{retry_after:.1f}s`)."
+    )
+
+
+def format_missing_permissions_error(perms_list: list, is_bot: bool = False) -> str:
+    perms_str = " • ".join(f"`{p}`" for p in perms_list)
+    if is_bot:
+        return (
+            f"### 🔒 Bot Missing Permissions\n"
+            f"The bot requires additional permissions in this channel:\n"
+            f"{perms_str}"
+        )
+    return (
+        f"### 🔒 Missing Permissions\n"
+        f"You do not have the required permissions to run this command:\n"
+        f"{perms_str}"
+    )
+
+
+def format_quota_error(error: AIQuotaReachedError) -> str:
+    reset_ts = getattr(error, 'reset_ts', None)
+    is_image = getattr(error, 'is_image', False)
+    if is_image and reset_ts:
+        return (
+            f"### ⚠️ Image Generation Limit Reached\n"
+            f"Free tier includes 1 image generation every 2 weeks.\n"
+            f"Next image available <t:{reset_ts}:R>.\n\n"
+            f"-# 💡 Upgrade to **Premium (2.99€/mo)** for 10 images/week or connect your own API key in `/settings`."
+        )
+    elif reset_ts:
+        return (
+            f"### ⚠️ AI Token Quota Reached\n"
+            f"This server has used its weekly token allowance (**100,000 / 100,000 tokens**).\n"
+            f"Weekly allowance resets <t:{reset_ts}:R> *(Monday 00:00 UTC)*.\n\n"
+            f"-# 💡 Server admins can upgrade to **Premium (500k tokens/week)** with `/upgrade` or link their own free API key in `/settings`."
+        )
+    return f"### ⚠️ AI Quota Reached\n{str(error)}"
+
+
+def format_missing_arg_error(param_name: str, prefix: str, cmd_name: str, signature: str) -> str:
+    return (
+        f"### ⚠️ Missing Required Argument\n"
+        f"Missing parameter: `<{param_name}>`\n\n"
+        f"**Usage**\n`{prefix}{cmd_name} {signature}`"
+    )
+
+
+def format_bad_arg_error(prefix: str, cmd_name: str, signature: str) -> str:
+    return (
+        f"### ⚠️ Invalid Argument Passed\n"
+        f"Please check the command syntax and try again.\n\n"
+        f"**Usage**\n`{prefix}{cmd_name} {signature}`"
+    )
+
+
+def format_unexpected_error() -> str:
+    return (
+        f"### ❌ Something Went Wrong\n"
+        f"An unexpected error occurred while executing this command.\n"
+        f"The incident has been automatically logged for diagnostics."
+    )
+
+
 class ErrorHandler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Save the original tree error handler, then override it
         self.original_tree_on_error = bot.tree.on_error
         bot.tree.on_error = self.on_app_command_error
 
     def cog_unload(self):
-        # Restore original tree error handler when cog is unloaded
         self.bot.tree.on_error = self.original_tree_on_error
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -29,28 +96,28 @@ class ErrorHandler(commands.Cog):
         if isinstance(error, app_commands.CommandInvokeError):
             error = error.original
 
-        response_content = None
-        
+        # Silently ignore dev/owner check failures to prevent giving away command existence
+        if isinstance(error, (commands.NotOwner, app_commands.CheckFailure)):
+            return
+
         if isinstance(error, app_commands.CommandOnCooldown):
-            response_content = f"{Emojis.WARNING} This command is on cooldown. Try again in `{error.retry_after:.1f}` seconds."
+            response_content = format_cooldown_error(error.retry_after)
         elif isinstance(error, app_commands.MissingPermissions):
-            perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
-            response_content = f"{Emojis.WARNING} You lack the required permissions to run this command: {perms}"
+            response_content = format_missing_permissions_error(error.missing_permissions, is_bot=False)
         elif isinstance(error, app_commands.BotMissingPermissions):
-            perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
-            response_content = f"{Emojis.WARNING} The bot lacks the required permissions to run this command: {perms}"
+            response_content = format_missing_permissions_error(error.missing_permissions, is_bot=True)
         elif isinstance(error, AIQuotaReachedError):
-            response_content = ErrorMessages.QUOTA_REACHED
+            response_content = format_quota_error(error)
         elif isinstance(error, (AIRateLimitError, AIServiceUnavailableError)):
-            response_content = ErrorMessages.BUSY_OR_LIMIT
+            response_content = f"### ⚠️ Service Busy\n{ErrorMessages.BUSY_OR_LIMIT}"
         elif isinstance(error, AISafetyBlockedError):
-            response_content = ErrorMessages.SAFETY_BLOCKED
+            response_content = f"### ⚠️ Content Blocked\n{ErrorMessages.SAFETY_BLOCKED}"
         elif isinstance(error, AIConfigurationError):
-            response_content = f"{Emojis.ERROR} AI service is misconfigured. Please check API keys."
+            response_content = f"### ❌ AI Configuration Error\nAI service is misconfigured. Please check API keys in `/settings`."
         else:
             # Uncaught slash command error
             logger.error(f"Slash command error: {error}", exc_info=error)
-            response_content = f"{Emojis.ERROR} An unexpected error occurred while running the command."
+            response_content = format_unexpected_error()
 
         # Telemetry: Log Error & Failed Execution (ignore developer/analytics cogs)
         command_name = interaction.command.name if interaction.command else "Unknown"
@@ -103,45 +170,46 @@ class ErrorHandler(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
-        # If the command has its own local error handler, skip global handling
         if hasattr(ctx.command, 'on_error'):
             return
 
-        # Unwrap CommandInvokeError to get the real cause
         if isinstance(error, commands.CommandInvokeError):
             error = error.original
 
-        # Also skip if it's already handled by app command handler (hybrid command slash path)
         if isinstance(error, app_commands.AppCommandError):
             return
 
-        if isinstance(error, commands.CommandNotFound):
-            return  # Silently ignore command not found to avoid chat clutter
+        # Silently ignore command not found and dev/owner check failures to prevent giving away command existence
+        if isinstance(error, (commands.CommandNotFound, commands.NotOwner, app_commands.CheckFailure)):
+            return
 
         if isinstance(error, commands.CommandOnCooldown):
-            await ctx.reply(f"{Emojis.WARNING} This command is on cooldown. Try again in `{error.retry_after:.1f}` seconds.")
+            await ctx.reply(format_cooldown_error(error.retry_after))
         elif isinstance(error, commands.MissingPermissions):
-            perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
-            await ctx.reply(f"{Emojis.WARNING} You lack the required permissions to run this command: {perms}")
+            await ctx.reply(format_missing_permissions_error(error.missing_permissions, is_bot=False))
         elif isinstance(error, commands.BotMissingPermissions):
-            perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
-            await ctx.reply(f"{Emojis.WARNING} The bot lacks the required permissions to run this command: {perms}")
+            await ctx.reply(format_missing_permissions_error(error.missing_permissions, is_bot=True))
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.reply(f"{Emojis.WARNING} Missing required argument: `{error.param.name}`. Correct usage: `{ctx.prefix}{ctx.command.qualified_name} {ctx.command.signature}`")
+            prefix = ctx.prefix or "!"
+            cmd_name = ctx.command.qualified_name if ctx.command else "command"
+            sig = ctx.command.signature if ctx.command else ""
+            await ctx.reply(format_missing_arg_error(error.param.name, prefix, cmd_name, sig))
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply(f"{Emojis.WARNING} Invalid argument passed. Correct usage: `{ctx.prefix}{ctx.command.qualified_name} {ctx.command.signature}`")
+            prefix = ctx.prefix or "!"
+            cmd_name = ctx.command.qualified_name if ctx.command else "command"
+            sig = ctx.command.signature if ctx.command else ""
+            await ctx.reply(format_bad_arg_error(prefix, cmd_name, sig))
         elif isinstance(error, AIQuotaReachedError):
-            await ctx.reply(ErrorMessages.QUOTA_REACHED)
+            await ctx.reply(format_quota_error(error))
         elif isinstance(error, (AIRateLimitError, AIServiceUnavailableError)):
-            await ctx.reply(ErrorMessages.BUSY_OR_LIMIT)
+            await ctx.reply(f"### ⚠️ Service Busy\n{ErrorMessages.BUSY_OR_LIMIT}")
         elif isinstance(error, AISafetyBlockedError):
-            await ctx.reply(ErrorMessages.SAFETY_BLOCKED)
+            await ctx.reply(f"### ⚠️ Content Blocked\n{ErrorMessages.SAFETY_BLOCKED}")
         elif isinstance(error, AIConfigurationError):
-            await ctx.reply(f"{Emojis.ERROR} AI service is misconfigured. Please check API keys.")
+            await ctx.reply(f"### ❌ AI Configuration Error\nAI service is misconfigured. Please check API keys.")
         else:
-            # Uncaught prefix command error
             logger.error(f"Prefix command error: {error}", exc_info=error)
-            await ctx.reply(f"{Emojis.ERROR} An unexpected error occurred while running the command.")
+            await ctx.reply(format_unexpected_error())
 
         # Telemetry: Log Error & Failed Execution (ignore developer/analytics cogs)
         if not (ctx.cog and ctx.cog.qualified_name in ["Dev", "Analytics", "ErrorHandler"]):

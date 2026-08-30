@@ -25,56 +25,130 @@ logger = logging.getLogger(__name__)
 
 
 class QuotaContainer(ui.Container):
-    def __init__(self, guild_name: str, data: dict, limit_eur: float = 5.00):
+    def __init__(self, guild_name: str, usage_data: dict, guild_settings: dict, checkout_url: typing.Optional[str] = None, portal_url: typing.Optional[str] = None):
         super().__init__()
-        
-        self.add_item(ui.TextDisplay(f"### 💳 AI Monthly Budget & Quota\n-# Spending and token usage for **{guild_name}**."))
-        self.add_item(ui.Separator())
+        self.guild_name = guild_name
+        self.usage_data = usage_data
+        self.guild_settings = guild_settings
+        self.checkout_url = checkout_url
+        self.portal_url = portal_url
+        self._make_container()
 
-        spent = data.get("total_cost", 0.0)
-        pct = min(100.0, (spent / limit_eur) * 100.0) if limit_eur > 0 else 0.0
-        remaining = max(0.0, limit_eur - spent)
-
-        # Visual progress bar (16 blocks)
-        filled = int((pct / 100.0) * 16)
-        bar = "█" * filled + "░" * (16 - filled)
-
-        # Calculate next month reset timestamp
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if now.month == 12:
-            next_month = datetime.datetime(now.year + 1, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
-        else:
-            next_month = datetime.datetime(now.year, now.month + 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
-        reset_ts = int(next_month.timestamp())
-
-        cost_text = (
-            f"**Budget Spent:** €{spent:.3f} / €{limit_eur:.2f} ({pct:.1f}%)\n"
-            f"`[{bar}]`\n"
-            f"**Remaining Allowance:** €{remaining:.3f}\n"
-            f"**Monthly Reset:** <t:{reset_ts}:D> (<t:{reset_ts}:R>)"
+    def _make_container(self):
+        is_premium = bool(self.guild_settings.get("is_premium", 0))
+        has_byok = bool(
+            self.guild_settings.get("byok_gemini_key") or 
+            self.guild_settings.get("byok_xai_key") or 
+            self.guild_settings.get("byok_openai_key") or 
+            self.guild_settings.get("byok_anthropic_key")
         )
-        self.add_item(ui.TextDisplay(cost_text))
-        self.add_item(ui.Separator())
 
-        total_prompts = data.get("total_prompts", 0)
-        total_tokens = data.get("total_input_tokens", 0) + data.get("total_output_tokens", 0)
-        
-        stats_text = (
-            f"**Total Prompts This Month:** {total_prompts:,}\n"
-            f"**Tokens Consumed:** {total_tokens:,} ({data.get('total_input_tokens', 0):,} in • {data.get('total_output_tokens', 0):,} out)"
-        )
-        self.add_item(ui.TextDisplay(stats_text))
-        self.add_item(ui.Separator())
-
-        top_models = data.get("top_models", [])
-        if top_models:
-            model_lines = []
-            for mname, count, mcost in top_models:
-                model_lines.append(f"• `{mname}`: **{count:,}** prompts (approx. €{mcost:.3f})")
-            models_str = "\n".join(model_lines)
-            self.add_item(ui.TextDisplay(f"**Top Models by Usage:**\n{models_str}"))
+        if has_byok:
+            plan_name = "Bring Your Own Key"
+            token_limit = None
+        elif is_premium:
+            plan_name = "Premium Plan"
+            token_limit = 500_000
         else:
-            self.add_item(ui.TextDisplay("*No AI requests recorded for this server this month.*"))
+            plan_name = "Free Plan"
+            token_limit = 100_000
+
+        total_tokens = self.usage_data.get("total_tokens", 0)
+        reset_ts = self.usage_data.get("next_reset_ts", int(time.time() + 86400 * 7))
+        img_count = self.usage_data.get("image_count", 0)
+        prompt_count = self.usage_data.get("prompt_count", 0)
+        in_tokens = self.usage_data.get("input_tokens", 0)
+        out_tokens = self.usage_data.get("output_tokens", 0)
+
+        # Calculations
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        days_elapsed = max(1, now_utc.weekday() + 1)
+        daily_avg = int(total_tokens / days_elapsed)
+
+        pct = 0.0
+        if token_limit:
+            pct = min(100.0, (total_tokens / token_limit) * 100.0)
+            filled = min(10, max(0, int(round((pct / 100.0) * 10))))
+            if pct < 70.0:
+                fill_char = "🟩"
+            elif pct < 90.0:
+                fill_char = "🟨"
+            else:
+                fill_char = "🟥"
+            bar = fill_char * filled + "⬛" * (10 - filled)
+            
+            days_left = max(1, int((reset_ts - now_utc.timestamp()) / 86400))
+            projected = total_tokens + (daily_avg * days_left)
+            burn_sub = "*(On track ✅)*" if projected <= token_limit else "*(At risk ⚠️)*"
+        else:
+            bar = "🟢 Unlimited"
+            burn_sub = ""
+
+        # Image text compact
+        if has_byok:
+            img_text_compact = f"{img_count} generated (Unlimited)"
+        elif is_premium:
+            img_text_compact = f"{img_count} / 10 this week"
+        else:
+            next_img = self.usage_data.get("next_image_reset_ts")
+            next_img_str = f" • Resets <t:{next_img}:R>" if next_img else ""
+            img_text_compact = f"{img_count} / 1{next_img_str}"
+
+        # ----------------------------------------------------
+        # RENDER GRID SUMMARY LAYOUT
+        # ----------------------------------------------------
+        self.add_item(ui.TextDisplay(f"# AI Quota\n-# {self.guild_name}"))
+        self.add_item(ui.Separator())
+
+        if token_limit:
+            plan_card = (
+                f"**{plan_name}**\n"
+                f"{total_tokens:,} / {token_limit:,} Tokens ({pct:.1f}%)\n"
+                f"{bar}\n"
+                f"-# Resets <t:{reset_ts}:R> (<t:{reset_ts}:D>) • ~{daily_avg:,} tokens/day {burn_sub}"
+            )
+        else:
+            plan_card = (
+                f"**{plan_name}**\n"
+                f"{total_tokens:,} Tokens Consumed\n"
+                f"-# 🟢 Unlimited • ~{daily_avg:,} tokens/day"
+            )
+        self.add_item(ui.TextDisplay(plan_card))
+        self.add_item(ui.Separator())
+
+        usage_card = (
+            f"**Usage Summary**\n"
+            f"💬 **Prompts:** {prompt_count:,} requests\n"
+            f"📊 **Data:** {in_tokens:,} Input • {out_tokens:,} Output\n"
+            f"🖼️ **Images:** {img_text_compact}"
+        )
+        self.add_item(ui.TextDisplay(usage_card))
+
+        # Bottom Action / Upgrade Section (strictly when near token limit >= 85%)
+        if not is_premium and not has_byok and self.checkout_url and pct >= 85.0:
+            self.add_item(ui.Separator())
+            upgrade_display = ui.TextDisplay(
+                f"**Need More Capacity?**\n"
+                f"-# 500k tokens/wk, 30-msg history & vision"
+            )
+            upgrade_btn = ui.Button(
+                label="👑 Upgrade",
+                url=self.checkout_url,
+                style=discord.ButtonStyle.link
+            )
+            self.add_item(ui.Section(upgrade_display, accessory=upgrade_btn))
+        elif is_premium and self.portal_url:
+            self.add_item(ui.Separator())
+            portal_display = ui.TextDisplay(
+                f"**Premium Active**\n"
+                f"-# 500k tokens/wk, 30-msg context & vision enabled."
+            )
+            portal_btn = ui.Button(
+                label="Manage Subscription",
+                url=self.portal_url,
+                style=discord.ButtonStyle.link
+            )
+            self.add_item(ui.Section(portal_display, accessory=portal_btn))
 
 
 class AI(commands.Cog):
@@ -120,29 +194,27 @@ class AI(commands.Cog):
         logger.info(f"Loaded {len(self.active_summons)} active summons.")
 
 
-    async def check_quota(self, guild_id: typing.Optional[int] = None) -> bool:
-        """Checks if the guild has reached its monthly EUR budget ceiling."""
+    async def check_quota(self, guild_id: typing.Optional[int] = None, is_image: bool = False) -> typing.Tuple[bool, str, dict]:
+        """Checks if the guild has remaining weekly quota for text or image generation."""
         if not guild_id:
-            return True
-        usage = await self.bot.db_manager.get_guild_monthly_ai_usage(guild_id)
-        if usage.get("total_cost", 0.0) >= self.MONTHLY_GUILD_LIMIT_EUR:
-            return False
-        return True
+            return True, "DM", {}
+        guild_settings = self.bot.settings_cache.get(guild_id, {})
+        return await self.bot.db_manager.check_ai_quota_allowance(guild_id, guild_settings, is_image=is_image)
 
 
-    async def update_usage(self, response, channel_id=None):
+    async def update_usage(self, response, guild_id: typing.Optional[int] = None, channel_id: typing.Optional[int] = None):
         if not hasattr(response, 'usage_metadata') or not response.usage_metadata:
             return
         
         in_tokens = response.usage_metadata.prompt_token_count or 0
         out_tokens = response.usage_metadata.candidates_token_count or 0
-        total = in_tokens + out_tokens
+        is_img = bool(getattr(response, 'image_bytes', None))
         
-        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        await self.bot.db_manager.record_ai_usage(today, in_tokens, out_tokens)
+        if guild_id:
+            await self.bot.db_manager.record_guild_ai_usage(guild_id, in_tokens, out_tokens, is_image=is_img)
             
         if channel_id and channel_id in self.active_summons:
-            self.active_summons[channel_id]['tokens'] += total
+            self.active_summons[channel_id]['tokens'] += (in_tokens + out_tokens)
 
 
     def parse_time(self, time_str):
@@ -159,11 +231,17 @@ class AI(commands.Cog):
         return None
 
     
-    async def _get_chat_history(self, ctx: commands.Context, channel_id: int, message_count: int) -> list:
+    async def _get_chat_history(self, ctx: commands.Context, channel_id: int, message_count: int, max_age_minutes: typing.Optional[int] = 45) -> list:
         message_list = []
         channel = await commands.TextChannelConverter().convert(ctx, str(channel_id))
+        now = discord.utils.utcnow()
         try:
-            message_list = [message async for message in channel.history(limit=message_count)]
+            async for message in channel.history(limit=message_count):
+                if max_age_minutes is not None:
+                    age_mins = (now - message.created_at).total_seconds() / 60.0
+                    if age_mins > max_age_minutes:
+                        break
+                message_list.append(message)
         except Exception as e:
             logger.error(f"Failed to get message history: {e}")
             return []
@@ -174,10 +252,29 @@ class AI(commands.Cog):
     @commands.hybrid_command(name="quota", aliases=["usage", "aiquota", "budget"])
     @commands.guild_only()
     async def quota(self, ctx: commands.Context):
-        """Displays the server's monthly AI spending, budget progress, and token consumption."""
+        """Displays the server's weekly AI token allowance, image generations, and current tier."""
         await ctx.defer()
-        usage_data = await self.bot.db_manager.get_guild_monthly_ai_usage(ctx.guild.id)
-        container = QuotaContainer(ctx.guild.name, usage_data, limit_eur=self.MONTHLY_GUILD_LIMIT_EUR)
+        guild_settings = self.bot.settings_cache.get(ctx.guild.id, {})
+        usage_data = await self.bot.db_manager.get_guild_weekly_ai_usage(ctx.guild.id)
+        
+        checkout_url = None
+        portal_url = None
+        billing_cog = self.bot.get_cog("Billing")
+        if billing_cog and hasattr(billing_cog, "billing_service") and billing_cog.billing_service.is_configured:
+            try:
+                checkout_url = await billing_cog.billing_service.create_checkout_session(
+                    guild_id=ctx.guild.id,
+                    user_id=ctx.author.id,
+                    guild_name=ctx.guild.name,
+                    user_name=str(ctx.author)
+                )
+                sub = await self.bot.db_manager.get_subscription(ctx.guild.id)
+                if sub and sub.get("customer_id"):
+                    portal_url = billing_cog.billing_service.get_customer_portal_url(sub["customer_id"])
+            except Exception:
+                pass
+
+        container = QuotaContainer(ctx.guild.name, usage_data, guild_settings, checkout_url=checkout_url, portal_url=portal_url)
         view = ui.LayoutView(timeout=None)
         view.add_item(container)
         await ctx.reply(view=view)
@@ -187,12 +284,13 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def summarize(self, ctx, limit: int):
         """Summarizes last N messages."""
-        if not await self.check_quota(ctx.guild.id if ctx.guild else None):
-            raise AIQuotaReachedError()
+        allowed, reason, usage = await self.check_quota(ctx.guild.id if ctx.guild else None)
+        if not allowed:
+            raise AIQuotaReachedError(message=reason, reset_ts=usage.get("next_reset_ts"))
             
         await ctx.defer(ephemeral=True)
 
-        message_list = await self._get_chat_history(ctx, ctx.channel.id, int(limit))
+        message_list = await self._get_chat_history(ctx, ctx.channel.id, int(limit), max_age_minutes=None)
         if not message_list:
             await ctx.reply("No messages found to summarize.")
             return
@@ -208,7 +306,7 @@ class AI(commands.Cog):
             response = await self.model_manager.execute(guild_settings, [prompt])
         latency_ms = int((time.perf_counter() - start_time) * 1000)
             
-        await self.update_usage(response)
+        await self.update_usage(response, guild_id=ctx.guild.id if ctx.guild else None, channel_id=ctx.channel.id)
 
         try:
             in_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
@@ -229,7 +327,8 @@ class AI(commands.Cog):
                 prompt_chars=len(prompt or ""),
                 response_chars=len(response.text or ""),
                 failover_occurred=getattr(response, "failover_occurred", False),
-                failover_reason=getattr(response, "failover_reason", None)
+                failover_reason=getattr(response, "failover_reason", None),
+                prompt_text=f"/summarize {limit} messages"
             )
         except Exception as log_err:
             logger.error(f"Failed to log AI transaction telemetry: {log_err}")
@@ -242,12 +341,23 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def ask(self, ctx, question: str, image: typing.Optional[discord.Attachment] = None):
         """Asks the AI a question. Optionally attach an image."""
-        if not await self.check_quota(ctx.guild.id if ctx.guild else None):
-            raise AIQuotaReachedError()
+        allowed, reason, usage = await self.check_quota(ctx.guild.id if ctx.guild else None)
+        if not allowed:
+            raise AIQuotaReachedError(message=reason, reset_ts=usage.get("next_reset_ts"))
             
         await ctx.defer()
 
-        message_list = await self._get_chat_history(ctx, ctx.channel.id, self.CHAT_HISTORY_LIMIT)
+        guild_settings = self.bot.settings_cache.get(ctx.guild.id, {})
+        is_paid_or_byok = bool(
+            guild_settings.get("is_premium") or 
+            any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key"])
+        )
+
+        # Context limits: Free = 5 msgs, Paid/BYOK = 30 msgs
+        history_limit = 30 if is_paid_or_byok else 5
+        enable_vision = is_paid_or_byok
+
+        message_list = await self._get_chat_history(ctx, ctx.channel.id, history_limit)
         message_list.reverse()
         
         msg = ctx.message if hasattr(ctx, 'message') else None
@@ -257,20 +367,29 @@ class AI(commands.Cog):
             msg,
             message_list,
             f"Reply to the user's question: {question}",
-            slash_attachments=slash_attachments
+            slash_attachments=slash_attachments,
+            enable_vision=enable_vision
         )
 
-        logger.info(f"ask command trigger: contents contains {len(contents)} items")
+        logger.info(f"ask command trigger: contents contains {len(contents)} items (vision={enable_vision}, history={len(message_list)})")
+
+        async def _check_img_quota():
+            if not ctx.guild:
+                return True, "DM", None
+            allowed, reason, usage = await self.bot.db_manager.check_ai_quota_allowance(ctx.guild.id, guild_settings, is_image=True)
+            reset_ts = usage.get("next_image_reset_ts") or usage.get("next_reset_ts")
+            return allowed, reason, reset_ts
 
         start_time = time.perf_counter()
         async with ctx.typing():
-            guild_settings = self.bot.settings_cache.get(ctx.guild.id, {})
             response = await self.model_manager.execute(
                 guild_settings,
-                contents
+                contents,
+                image_quota_checker=_check_img_quota
             )
         latency_ms = int((time.perf_counter() - start_time) * 1000)
-        await self.update_usage(response)
+        response.latency_ms = latency_ms
+        await self.update_usage(response, guild_id=ctx.guild.id if ctx.guild else None, channel_id=ctx.channel.id)
 
         try:
             in_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
@@ -291,7 +410,8 @@ class AI(commands.Cog):
                 prompt_chars=len(question or ""),
                 response_chars=len(response.text or ""),
                 failover_occurred=getattr(response, "failover_occurred", False),
-                failover_reason=getattr(response, "failover_reason", None)
+                failover_reason=getattr(response, "failover_reason", None),
+                prompt_text=question
             )
         except Exception as log_err:
             logger.error(f"Failed to log AI transaction telemetry: {log_err}")
@@ -303,8 +423,9 @@ class AI(commands.Cog):
     @commands.guild_only()
     async def summon(self, ctx, duration: str = "10m"):
         """Summons the AI to listen and respond in this channel for a duration (e.g. 5m, 1h)."""
-        if not await self.check_quota(ctx.guild.id if ctx.guild else None):
-            raise AIQuotaReachedError()
+        allowed, reason, usage = await self.check_quota(ctx.guild.id if ctx.guild else None)
+        if not allowed:
+            raise AIQuotaReachedError(message=reason, reset_ts=usage.get("next_reset_ts"))
             
         if ctx.channel.id in self.active_summons:
             await ctx.reply(ErrorMessages.already_listening(), ephemeral=True)
@@ -330,11 +451,15 @@ class AI(commands.Cog):
         
         is_summoned = channel_id in self.active_summons
         is_chatbot_channel = bool(guild_id and self.bot.settings_cache.get(guild_id, {}).get("cbc") == channel_id)
-        
-        if not is_summoned and not is_chatbot_channel:
+
+        # 1. Must be in either the designated chatbot channel (CBC) OR actively summoned
+        if not is_chatbot_channel and not is_summoned:
             return False, is_summoned, is_chatbot_channel
 
+        # 2. Check if the bot was mentioned in the message
         is_mentioned = self.bot.user in message.mentions
+
+        # 3. Check if the message is a reply to the bot
         is_reply_to_bot = False
         if message.reference and message.reference.message_id:
             try:
@@ -343,13 +468,14 @@ class AI(commands.Cog):
                     ref_msg = await message.channel.fetch_message(message.reference.message_id)
                 if ref_msg and ref_msg.author.id == self.bot.user.id:
                     is_reply_to_bot = True
-            except:
+            except Exception:
                 pass
 
-        if not is_mentioned and not is_reply_to_bot:
-            return False, is_summoned, is_chatbot_channel
+        # 4. In chatbot channel or summoned channel: only respond if mentioned or replied to
+        if is_mentioned or is_reply_to_bot:
+            return True, is_summoned, is_chatbot_channel
 
-        return True, is_summoned, is_chatbot_channel
+        return False, is_summoned, is_chatbot_channel
 
     async def _check_summon_expiration(self, message: discord.Message, channel_id: int) -> bool:
         now = datetime.datetime.now().timestamp()
@@ -371,15 +497,19 @@ class AI(commands.Cog):
             channel_data['chat_messages_since_busy_warning'] = 0
         channel_data['chat_messages_since_busy_warning'] += 1
 
-        quota_ok = await self.check_quota(guild_id)
-        if quota_ok:
+        allowed, reason, usage = await self.check_quota(guild_id)
+        if allowed:
             if channel_id in self.warning_counters:
                 self.warning_counters[channel_id]['quota'] = 0
             return True
 
         if self._should_send_warning(channel_id, 'quota', interval=10):
             try:
-                await message.reply(ErrorMessages.QUOTA_REACHED)
+                reset_ts = usage.get("next_reset_ts", int(time.time() + 86400 * 7))
+                await message.reply(
+                    f"{Emojis.AI_FROWN} **Weekly AI Token Quota Reached!**\n"
+                    f"{reason} Resets <t:{reset_ts}:R> (Monday 00:00 UTC)."
+                )
             except:
                 pass
         else:
@@ -392,25 +522,43 @@ class AI(commands.Cog):
     async def _generate_message_reply(self, message: discord.Message, guild_id: int, channel_id: int, trigger_type: str = "mention"):
         async with message.channel.typing():
             try:
+                guild_settings = self.bot.settings_cache.get(guild_id, {})
+                is_paid_or_byok = bool(
+                    guild_settings.get("is_premium") or 
+                    any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key"])
+                )
+
+                # Context limits: Free = 15 msgs, Paid/BYOK = 30 msgs
+                history_limit = 30 if is_paid_or_byok else 15
+                enable_vision = is_paid_or_byok
+
                 ctx = await self.bot.get_context(message)
-                message_list = await self._get_chat_history(ctx, message.channel.id, self.CHAT_HISTORY_LIMIT)
+                message_list = await self._get_chat_history(ctx, message.channel.id, history_limit)
                 message_list = [msg for msg in message_list if msg.id != message.id]
                 message_list.reverse()
                 
                 prompt = f"Reply to this message from {message.author.display_name}: {message.content}"
-                contents = await ContextManager.prepare_contents(message, message_list, prompt)
+                contents = await ContextManager.prepare_contents(message, message_list, prompt, enable_vision=enable_vision)
 
-                logger.info(f"on_message trigger: contents contains {len(contents)} items")
+                logger.info(f"on_message trigger: contents contains {len(contents)} items (vision={enable_vision}, history={len(message_list)})")
+
+                async def _check_img_quota():
+                    if not guild_id:
+                        return True, "DM", None
+                    allowed, reason, usage = await self.bot.db_manager.check_ai_quota_allowance(guild_id, guild_settings, is_image=True)
+                    reset_ts = usage.get("next_image_reset_ts") or usage.get("next_reset_ts")
+                    return allowed, reason, reset_ts
 
                 start_time = time.perf_counter()
-                guild_settings = self.bot.settings_cache.get(guild_id, {})
                 response = await self.model_manager.execute(
                     guild_settings,
-                    contents
+                    contents,
+                    image_quota_checker=_check_img_quota
                 )
                 latency_ms = int((time.perf_counter() - start_time) * 1000)
+                response.latency_ms = latency_ms
                 
-                await self.update_usage(response, channel_id)
+                await self.update_usage(response, guild_id=guild_id, channel_id=channel_id)
 
                 try:
                     in_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
@@ -431,7 +579,8 @@ class AI(commands.Cog):
                         prompt_chars=len(message.content or ""),
                         response_chars=len(response.text or ""),
                         failover_occurred=getattr(response, "failover_occurred", False),
-                        failover_reason=getattr(response, "failover_reason", None)
+                        failover_reason=getattr(response, "failover_reason", None),
+                        prompt_text=message.content
                     )
                 except Exception as log_err:
                     logger.error(f"Failed to log AI transaction telemetry: {log_err}")
@@ -484,6 +633,10 @@ class AI(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
+            return
+
+        # Ignore blacklisted users globally
+        if message.author.id in getattr(self.bot, "blacklist_cache", set()):
             return
 
         channel_id = message.channel.id

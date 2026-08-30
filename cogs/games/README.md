@@ -6,19 +6,28 @@ This package provides interactive multiplayer Discord games with responsive butt
 
 ## 📁 Files & Structure
 
-* **`cog.py` (`Games`)**: Discord Cog exposing `/connect4` (`/c4`), `/blackjack` (`/bj`), `/daily`, `/givemoney` (dev-only balance grant), game lobbies, matchmaking, turn timeouts, and rematch handling.
+* **`cog.py` (`Games`)**: Discord Cog exposing `/wallet`, `/daily`, `/connect_four` (`/c4`), `/blackjack` (`/bj`), game lobbies, matchmaking, turn timeouts, and rematch handling.
+* **`wallet_views.py` (`WalletContainer`, `LeaderboardContainer`, `WalletView`)**: Interactive wallet cards, streak trackers, 1-click daily reward claimers, and global wealth leaderboard.
+* **`c4_matchmaking.py` (`C4MatchmakingManager`, `C4MatchmakingTicket`)**: Thread-safe global matchmaking queue manager pairing players across servers.
 * **`connect4.py` (`CFGame`, `run_mcts`)**: Connect 4 game engine containing NumPy grid representation, win-condition matrix checks, Monte Carlo Tree Search (MCTS) with Upper Confidence Bound for Trees (UCT) for AI moves, and custom emoji grid rendering.
 * **`blackjack.py` (`BlackjackTable`, `TableManager`, `Card`, `Shoe`, `Hand`)**: European Blackjack game engine with 6-deck shoe, soft/hard total evaluation, natural 21 (3:2 payout), split hands, double down, dealer AI rules, and bot-wide public/private room management.
-* **`blackjack_views.py`**: Discord UI component containers for Casino Lobby browser, stackable chip betting interface (`+5€`, `+10€`, `+50€`, `+100€`), live multiplayer card tables, and payout evaluation.
+* **`blackjack_views.py`**: Discord UI component containers for Casino Lobby browser, embedded Wallet and Wealth Leaderboard screens, stackable chip betting interface, live multiplayer card tables, and payout evaluation.
 
 ---
 
 ## 🎮 Features & Games
 
 ### 1. Connect 4 (`/connect_four`, `/c4`)
-* **PvP & PvAI Modes**: Play against friends or challenge the MCTS AI running in background worker processes.
-* **Drop Column Buttons**: Interactive buttons (`1`–`7`) with real-time board rendering.
-* **Telemetry**: Automatically records match winner, turns, duration, and participant IDs to `game_telemetry`.
+* **Gamemodes**:
+  * **🎮 Local Friend Lobby (PvsP)**: Play against a friend in the same channel.
+  * **🌐 Global Matchmaking**: Queue up and get paired with any player across all servers.
+  * **🤖 MCTS AI (PvsAI)**: 4 difficulty levels (`Easy`, `Medium`, `Hard`, `Grandmaster / 2000 simulations`).
+  * **🏆 Global Leaderboards**: Live rankings of top players by total wins, win streaks, and personal player cards.
+* **🔁 Interactive Rematch System**:
+  * **Against Bot**: Instant 1-click rematch restart.
+  * **PvP (Same View)**: Prompts opponent with `✅ Accept` / `❌ Decline`.
+  * **Matchmaking (Dual-View)**: Real-time cross-channel rematch synchronization.
+* **Telemetry & Stats**: Automatically records match winner, turns, duration, win streaks, and personal stats to `c4_stats` and `game_telemetry`.
 
 ### 2. Royal Casino Blackjack (`/blackjack`, `/daily`)
 * **Live Multiplayer Tables**: Continuous room loop with betting countdown (10s), single table hosting limit per user, 7-seat casino standard capacity, simultaneous card dealing, and sequential player action turns (`Hit`, `Stand`, `Double Down`, `Split` with 20s timers).

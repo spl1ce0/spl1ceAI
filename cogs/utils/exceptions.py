@@ -29,5 +29,8 @@ class AIConfigurationError(AIError):
     pass
 
 class AIQuotaReachedError(AIError):
-    """Raised when the bot's daily token quota is reached."""
-    pass
+    """Raised when the bot's weekly token or image generation quota is reached."""
+    def __init__(self, message: str = "Weekly AI token quota reached!", reset_ts: typing.Optional[int] = None, is_image: bool = False):
+        super().__init__(message)
+        self.reset_ts = reset_ts
+        self.is_image = is_image
