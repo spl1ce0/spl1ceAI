@@ -1,4 +1,5 @@
 import logging
+import datetime
 from typing import Optional, List, Tuple
 from cogs.utils.constants import DefaultSettings
 
@@ -1333,3 +1334,286 @@ class DatabaseManager:
             profile["recent_errors"] = await cursor.fetchall()
 
             return profile
+
+    async def get_user_ai_history_paginated(self, user_id: int, page: int = 1, page_size: int = 5) -> Tuple[List[Tuple], int, int]:
+        """Fetches paginated AI prompt logs for a specific user."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM ai_telemetry WHERE user_id = ?", (user_id,))
+            total_count = (await cursor.fetchone())[0]
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * page_size
+
+            await cursor.execute(
+                "SELECT model_name, provider, prompt_text, input_tokens, output_tokens, latency_ms, guild_id, channel_id, timestamp, estimated_cost "
+                "FROM ai_telemetry WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (user_id, page_size, offset)
+            )
+            rows = await cursor.fetchall()
+            return rows, total_count, total_pages
+
+    async def get_user_command_history_paginated(self, user_id: int, page: int = 1, page_size: int = 8) -> Tuple[List[Tuple], int, int]:
+        """Fetches paginated command execution logs for a specific user."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM command_telemetry WHERE user_id = ?", (user_id,))
+            total_count = (await cursor.fetchone())[0]
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * page_size
+
+            await cursor.execute(
+                "SELECT command_name, guild_id, channel_id, is_slash, execution_time_ms, success, timestamp "
+                "FROM command_telemetry WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (user_id, page_size, offset)
+            )
+            rows = await cursor.fetchall()
+            return rows, total_count, total_pages
+
+    async def export_user_complete_audit_log(self, user_id: int, user_display: str = "Unknown") -> str:
+        """Generates a complete forensic text transcript of every action ever taken by a user."""
+        dossier = await self.get_user_audit_dossier(user_id)
+        
+        async with self.db.cursor() as cursor:
+            # All commands
+            await cursor.execute(
+                "SELECT command_name, guild_id, channel_id, is_slash, execution_time_ms, success, timestamp "
+                "FROM command_telemetry WHERE user_id = ? ORDER BY id ASC",
+                (user_id,)
+            )
+            all_cmds = await cursor.fetchall()
+
+            # All AI queries
+            await cursor.execute(
+                "SELECT model_name, provider, prompt_text, input_tokens, output_tokens, latency_ms, guild_id, channel_id, timestamp, estimated_cost "
+                "FROM ai_telemetry WHERE user_id = ? ORDER BY id ASC",
+                (user_id,)
+            )
+            all_ai = await cursor.fetchall()
+
+            # All errors
+            await cursor.execute(
+                "SELECT command_name, error_type, error_message, traceback, guild_id, timestamp "
+                "FROM error_telemetry WHERE user_id = ? ORDER BY id ASC",
+                (user_id,)
+            )
+            all_errors = await cursor.fetchall()
+
+        lines = [
+            "=" * 70,
+            f"FORENSIC AUDIT DOSSIER — USER {user_id} ({user_display})",
+            "=" * 70,
+            f"Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}",
+            f"First Seen: {dossier.get('first_seen') or 'N/A'}",
+            f"Last Seen: {dossier.get('last_seen') or 'N/A'}",
+            f"Total Commands Run: {dossier.get('total_commands', 0):,}",
+            f"Total AI Queries: {dossier.get('ai_total_queries', 0):,}",
+            f"Total Tokens Consumed: {dossier.get('ai_total_tokens', 0):,}",
+            f"Wallet Balance: {dossier.get('economy', {}).get('balance', 1000.0):,.2f}€",
+            f"Blacklist Status: {'BLACKLISTED' if dossier.get('blacklist', {}).get('is_blacklisted') else 'CLEAR'}",
+            "",
+            "-" * 70,
+            f"COMPLETE AI PROMPT & QUERY HISTORY ({len(all_ai)} records)",
+            "-" * 70
+        ]
+
+        for i, (mname, prov, ptext, itok, otok, lat, gid, cid, ts, cost) in enumerate(all_ai, start=1):
+            lines.append(f"[{i:04d}] {ts} UTC | Guild: {gid} | Channel: {cid} | Model: {mname} ({prov})")
+            lines.append(f"       Tokens: In={itok or 0}, Out={otok or 0} | Latency: {lat}ms | Cost: ${cost or 0.0:.5f}")
+            lines.append(f"       PROMPT: {ptext or '[No text captured]'}")
+            lines.append("")
+
+        lines.extend([
+            "-" * 70,
+            f"COMPLETE COMMAND EXECUTION HISTORY ({len(all_cmds)} records)",
+            "-" * 70
+        ])
+        for i, (cname, gid, cid, is_slash, ex_time, succ, ts) in enumerate(all_cmds, start=1):
+            slash_str = "Slash" if is_slash else "Prefix"
+            status_str = "SUCCESS" if succ else "FAILED"
+            lines.append(f"[{i:04d}] {ts} UTC | {status_str} | {slash_str} '{cname}' ({ex_time}ms) | Guild: {gid} | Channel: {cid}")
+
+        if all_errors:
+            lines.extend([
+                "",
+                "-" * 70,
+                f"UNCAUGHT ERROR & CRASH LOG ({len(all_errors)} records)",
+                "-" * 70
+            ])
+            for i, (cname, etype, emsg, tb, gid, ts) in enumerate(all_errors, start=1):
+                lines.append(f"[{i:04d}] {ts} UTC | Command: '{cname}' | Error: {etype}: {emsg} | Guild: {gid}")
+                if tb:
+                    lines.append(f"       Traceback:\n{tb}")
+                lines.append("")
+
+        return "\n".join(lines)
+
+    async def get_guild_audit_dossier(self, guild_id: int) -> dict:
+        """Aggregates deep forensic intelligence for a specific Discord server."""
+        async with self.db.cursor() as cursor:
+            # 1. Guild Settings
+            await cursor.execute("SELECT prefix, cbc, log_channel, is_premium, llm_primary, custom_prompt FROM guild_settings WHERE guild_id = ?", (guild_id,))
+            s_row = await cursor.fetchone()
+            settings = {
+                "prefix": s_row[0] if s_row else "!",
+                "cbc": s_row[1] if s_row else None,
+                "log_channel": s_row[2] if s_row else None,
+                "is_premium": bool(s_row[3]) if s_row else False,
+                "llm_primary": s_row[4] if s_row else "gemini",
+                "custom_prompt": s_row[5] if s_row else None
+            }
+
+            # 2. Join Event
+            await cursor.execute("SELECT timestamp, member_count FROM guild_telemetry WHERE guild_id = ? AND event_type = 'join' ORDER BY id ASC LIMIT 1", (guild_id,))
+            join_row = await cursor.fetchone()
+
+            # 3. Usage Aggregates
+            await cursor.execute("SELECT COUNT(*) FROM command_telemetry WHERE guild_id = ?", (guild_id,))
+            total_commands = (await cursor.fetchone())[0]
+
+            await cursor.execute("SELECT COUNT(*), SUM(input_tokens), SUM(output_tokens) FROM ai_telemetry WHERE guild_id = ?", (guild_id,))
+            ai_row = await cursor.fetchone()
+            total_ai = ai_row[0] if ai_row else 0
+            total_tokens = ((ai_row[1] or 0) + (ai_row[2] or 0)) if ai_row else 0
+
+            # 4. Top Active Users in Guild
+            await cursor.execute(
+                "SELECT user_id, COUNT(*) as cnt FROM command_telemetry WHERE guild_id = ? GROUP BY user_id ORDER BY cnt DESC LIMIT 5",
+                (guild_id,)
+            )
+            top_users = await cursor.fetchall()
+
+            # 5. Recent AI Queries in Guild
+            await cursor.execute(
+                "SELECT user_id, model_name, prompt_text, input_tokens, output_tokens, latency_ms, channel_id, timestamp "
+                "FROM ai_telemetry WHERE guild_id = ? ORDER BY id DESC LIMIT 5",
+                (guild_id,)
+            )
+            recent_ai = await cursor.fetchall()
+
+            # 6. Recent Commands in Guild
+            await cursor.execute(
+                "SELECT user_id, command_name, channel_id, execution_time_ms, success, timestamp "
+                "FROM command_telemetry WHERE guild_id = ? ORDER BY id DESC LIMIT 5",
+                (guild_id,)
+            )
+            recent_cmds = await cursor.fetchall()
+
+            return {
+                "guild_id": guild_id,
+                "settings": settings,
+                "joined_at": join_row[0] if join_row else None,
+                "initial_members": join_row[1] if join_row else None,
+                "total_commands": total_commands,
+                "total_ai_queries": total_ai,
+                "total_tokens": total_tokens,
+                "top_users": top_users,
+                "recent_ai": recent_ai,
+                "recent_commands": recent_cmds
+            }
+
+    async def get_guild_ai_history_paginated(self, guild_id: int, page: int = 1, page_size: int = 5) -> Tuple[List[Tuple], int, int]:
+        """Fetches paginated AI prompt logs for an entire server."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM ai_telemetry WHERE guild_id = ?", (guild_id,))
+            total_count = (await cursor.fetchone())[0]
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * page_size
+
+            await cursor.execute(
+                "SELECT user_id, model_name, provider, prompt_text, input_tokens, output_tokens, latency_ms, channel_id, timestamp, estimated_cost "
+                "FROM ai_telemetry WHERE guild_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (guild_id, page_size, offset)
+            )
+            rows = await cursor.fetchall()
+            return rows, total_count, total_pages
+
+    async def get_guild_command_history_paginated(self, guild_id: int, page: int = 1, page_size: int = 8) -> Tuple[List[Tuple], int, int]:
+        """Fetches paginated command execution logs for an entire server."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM command_telemetry WHERE guild_id = ?", (guild_id,))
+            total_count = (await cursor.fetchone())[0]
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * page_size
+
+            await cursor.execute(
+                "SELECT user_id, command_name, channel_id, is_slash, execution_time_ms, success, timestamp "
+                "FROM command_telemetry WHERE guild_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (guild_id, page_size, offset)
+            )
+            rows = await cursor.fetchall()
+            return rows, total_count, total_pages
+
+    async def export_guild_complete_audit_log(self, guild_id: int, guild_name: str = "Unknown") -> str:
+        """Generates a complete forensic text transcript of every action ever taken inside a server."""
+        dossier = await self.get_guild_audit_dossier(guild_id)
+
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT user_id, command_name, channel_id, is_slash, execution_time_ms, success, timestamp "
+                "FROM command_telemetry WHERE guild_id = ? ORDER BY id ASC",
+                (guild_id,)
+            )
+            all_cmds = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT user_id, model_name, provider, prompt_text, input_tokens, output_tokens, latency_ms, channel_id, timestamp, estimated_cost "
+                "FROM ai_telemetry WHERE guild_id = ? ORDER BY id ASC",
+                (guild_id,)
+            )
+            all_ai = await cursor.fetchall()
+
+            await cursor.execute(
+                "SELECT user_id, command_name, error_type, error_message, traceback, timestamp "
+                "FROM error_telemetry WHERE guild_id = ? ORDER BY id ASC",
+                (guild_id,)
+            )
+            all_errors = await cursor.fetchall()
+
+        lines = [
+            "=" * 70,
+            f"FORENSIC SERVER AUDIT DOSSIER — GUILD {guild_id} ('{guild_name}')",
+            "=" * 70,
+            f"Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}",
+            f"Invited / Bot Joined: {dossier.get('joined_at') or 'N/A'}",
+            f"Plan Status: {'PREMIUM 👑' if dossier.get('settings', {}).get('is_premium') else 'FREE'}",
+            f"Total Server Commands: {dossier.get('total_commands', 0):,}",
+            f"Total AI Queries: {dossier.get('total_ai_queries', 0):,}",
+            f"Total Tokens: {dossier.get('total_tokens', 0):,}",
+            "",
+            "-" * 70,
+            f"SERVER AI PROMPTS & CHAT LOGS ({len(all_ai)} records)",
+            "-" * 70
+        ]
+
+        for i, (uid, mname, prov, ptext, itok, otok, lat, cid, ts, cost) in enumerate(all_ai, start=1):
+            lines.append(f"[{i:04d}] {ts} UTC | User: {uid} | Channel: {cid} | Model: {mname} ({prov})")
+            lines.append(f"       Tokens: In={itok or 0}, Out={otok or 0} | Latency: {lat}ms | Cost: ${cost or 0.0:.5f}")
+            lines.append(f"       PROMPT: {ptext or '[No text captured]'}")
+            lines.append("")
+
+        lines.extend([
+            "-" * 70,
+            f"SERVER COMMAND EXECUTION HISTORY ({len(all_cmds)} records)",
+            "-" * 70
+        ])
+        for i, (uid, cname, cid, is_slash, ex_time, succ, ts) in enumerate(all_cmds, start=1):
+            slash_str = "Slash" if is_slash else "Prefix"
+            status_str = "SUCCESS" if succ else "FAILED"
+            lines.append(f"[{i:04d}] {ts} UTC | User: {uid} | {status_str} | {slash_str} '{cname}' ({ex_time}ms) | Channel: {cid}")
+
+        if all_errors:
+            lines.extend([
+                "",
+                "-" * 70,
+                f"SERVER ERROR & CRASH LOG ({len(all_errors)} records)",
+                "-" * 70
+            ])
+            for i, (uid, cname, etype, emsg, tb, ts) in enumerate(all_errors, start=1):
+                lines.append(f"[{i:04d}] {ts} UTC | User: {uid} | Command: '{cname}' | Error: {etype}: {emsg}")
+                if tb:
+                    lines.append(f"       Traceback:\n{tb}")
+                lines.append("")
+
+        return "\n".join(lines)

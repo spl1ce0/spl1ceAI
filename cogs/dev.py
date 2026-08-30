@@ -554,6 +554,26 @@ class Dev(cmds.Cog):
         self.bot.blacklist_cache.discard(target_uid)
         await ctx.reply(f"🟢 **User `{target_uid}` has been unblacklisted.**", ephemeral=True)
 
+    @cmds.hybrid_command(name="inspectguild", aliases=["auditguild", "guildlookup", "guilddossier", "whoisguild"])
+    @cmds.is_owner()
+    @discord.app_commands.describe(guild="The server ID to audit (or 'this' for current server)")
+    async def inspect_guild(self, ctx: Context, guild: str = "this"):
+        """[Owner Only] Deep intelligence audit on any server across settings, telemetry, commands, and AI queries."""
+        await ctx.defer(ephemeral=True)
+        if guild == "this" and ctx.guild:
+            target_gid = ctx.guild.id
+        else:
+            clean_gid = guild.strip("<@!&#> ")
+            try:
+                target_gid = int(clean_gid)
+            except ValueError:
+                await ctx.reply("❌ Invalid server ID provided.", ephemeral=True)
+                return
+
+        view = GuildAuditLayoutView(self.bot, target_gid)
+        await view.render_guild(target_gid)
+        await ctx.reply(view=view, ephemeral=True)
+
 
 class LogFileSelect(discord.ui.Select):
     def __init__(self, current_file):
@@ -765,7 +785,7 @@ class AnalyticsLayoutView(ui.LayoutView):
         container = await AnalyticsHeatmapContainer.create(self)
         self.add_item(container)
 
-    async def render_user_audit(self, user_id: int):
+    async def render_user_audit(self, user_id: int, back_to_users: bool = True):
         self.clear_items()
         dossier = await self.bot.db_manager.get_user_audit_dossier(user_id)
         target_user = self.bot.get_user(user_id)
@@ -774,7 +794,38 @@ class AnalyticsLayoutView(ui.LayoutView):
                 target_user = await self.bot.fetch_user(user_id)
             except Exception:
                 target_user = None
-        container = UserAuditContainer(self.bot, user_id, dossier, target_user=target_user, parent_view=self, back_to_users=True)
+        container = UserAuditContainer(self.bot, user_id, dossier, target_user=target_user, parent_view=self, back_to_users=back_to_users)
+        self.add_item(container)
+
+    async def render_guild_audit(self, guild_id: int, back_to_guilds: bool = True):
+        self.clear_items()
+        dossier = await self.bot.db_manager.get_guild_audit_dossier(guild_id)
+        target_guild = self.bot.get_guild(guild_id)
+        container = GuildAuditContainer(self.bot, guild_id, dossier, target_guild=target_guild, parent_view=self, back_to_guilds=back_to_guilds)
+        self.add_item(container)
+
+    async def render_user_ai_history(self, user_id: int, page: int = 1, back_to_users: bool = True):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_user_ai_history_paginated(user_id, page=page)
+        container = UserAIHistoryContainer(self.bot, user_id, rows, page, total_pages, total_count, parent_view=self, back_to_users=back_to_users)
+        self.add_item(container)
+
+    async def render_user_command_history(self, user_id: int, page: int = 1, back_to_users: bool = True):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_user_command_history_paginated(user_id, page=page)
+        container = UserCommandHistoryContainer(self.bot, user_id, rows, page, total_pages, total_count, parent_view=self, back_to_users=back_to_users)
+        self.add_item(container)
+
+    async def render_guild_ai_history(self, guild_id: int, page: int = 1, back_to_guilds: bool = True):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_guild_ai_history_paginated(guild_id, page=page)
+        container = GuildAIHistoryContainer(self.bot, guild_id, rows, page, total_pages, total_count, parent_view=self, back_to_guilds=back_to_guilds)
+        self.add_item(container)
+
+    async def render_guild_command_history(self, guild_id: int, page: int = 1, back_to_guilds: bool = True):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_guild_command_history_paginated(guild_id, page=page)
+        container = GuildCommandHistoryContainer(self.bot, guild_id, rows, page, total_pages, total_count, parent_view=self, back_to_guilds=back_to_guilds)
         self.add_item(container)
 
 
@@ -952,6 +1003,10 @@ class AnalyticsGuildsContainer(ui.Container):
         back_btn.callback = self._on_back_click
         nav_row.add_item(back_btn)
 
+        inspect_btn = ui.Button(label="Inspect Guild", emoji="🔍", style=discord.ButtonStyle.primary)
+        inspect_btn.callback = self._on_inspect_guild_click
+        nav_row.add_item(inspect_btn)
+
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
@@ -968,6 +1023,9 @@ class AnalyticsGuildsContainer(ui.Container):
     async def _on_back_click(self, interaction: discord.Interaction):
         await self.view.render_home()
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
+    async def _on_inspect_guild_click(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(InspectGuildModal(self.bot, self.view))
 
     async def _on_refresh_click(self, interaction: discord.Interaction):
         await self.view.render_guilds()
@@ -1047,8 +1105,41 @@ class InspectUserModal(ui.Modal, title="Inspect User Dossier"):
             await interaction.response.send_message("❌ Invalid user ID or mention provided.", ephemeral=True)
             return
 
-        await self.analytics_view.render_user_audit(target_uid)
-        await interaction.response.edit_message(view=self.analytics_view)
+        if hasattr(self.analytics_view, "render_user_audit"):
+            await self.analytics_view.render_user_audit(target_uid)
+            await interaction.response.edit_message(view=self.analytics_view)
+        elif hasattr(self.analytics_view, "render_user"):
+            await self.analytics_view.render_user(target_uid)
+            await interaction.response.edit_message(view=self.analytics_view)
+
+
+class InspectGuildModal(ui.Modal, title="Inspect Server Dossier"):
+    guild_input = ui.TextInput(
+        label="Server ID",
+        placeholder="e.g. 1027212609608491148",
+        max_length=40,
+        required=True
+    )
+
+    def __init__(self, bot, analytics_view):
+        super().__init__()
+        self.bot = bot
+        self.analytics_view = analytics_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        val = self.guild_input.value.strip("<@!&#> ")
+        try:
+            target_gid = int(val)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid server ID provided.", ephemeral=True)
+            return
+
+        if hasattr(self.analytics_view, "render_guild_audit"):
+            await self.analytics_view.render_guild_audit(target_gid)
+            await interaction.response.edit_message(view=self.analytics_view)
+        elif hasattr(self.analytics_view, "render_guild"):
+            await self.analytics_view.render_guild(target_gid)
+            await interaction.response.edit_message(view=self.analytics_view)
 
 
 class BlacklistModal(ui.Modal, title="Blacklist User"):
@@ -1181,26 +1272,55 @@ class UserAuditContainer(ui.Container):
         self.add_item(ui.TextDisplay(econ_text))
         self.add_item(ui.Separator())
 
-        # 6. Action Row: Blacklist / Unblacklist & Reload
-        action_row = ui.ActionRow()
+        # 6. Deep History & Export Action Row
+        row1 = ui.ActionRow()
+        ai_hist_btn = ui.Button(label="AI History", emoji="🤖", style=discord.ButtonStyle.primary)
+        ai_hist_btn.callback = self._on_ai_history_click
+        row1.add_item(ai_hist_btn)
+
+        cmd_hist_btn = ui.Button(label="Commands", emoji="⌨️", style=discord.ButtonStyle.primary)
+        cmd_hist_btn.callback = self._on_cmd_history_click
+        row1.add_item(cmd_hist_btn)
+
+        export_btn = ui.Button(label="Export Log", emoji="📥", style=discord.ButtonStyle.secondary)
+        export_btn.callback = self._on_export_click
+        row1.add_item(export_btn)
+        self.add_item(row1)
+
+        # 7. Moderation Action Row
+        row2 = ui.ActionRow()
         if is_bl:
             unbl_btn = ui.Button(label="Unblacklist User", emoji="🟢", style=discord.ButtonStyle.green)
             unbl_btn.callback = self._on_unblacklist_click
-            action_row.add_item(unbl_btn)
+            row2.add_item(unbl_btn)
         else:
             bl_btn = ui.Button(label="Blacklist User", emoji="🚫", style=discord.ButtonStyle.danger)
             bl_btn.callback = self._on_blacklist_click
-            action_row.add_item(bl_btn)
+            row2.add_item(bl_btn)
 
         ref_btn = ui.Button(label="Reload", emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_reload_click
-        action_row.add_item(ref_btn)
+        row2.add_item(ref_btn)
 
-        self.add_item(action_row)
+        self.add_item(row2)
 
     async def _on_back_to_users(self, interaction: discord.Interaction):
         await self.parent_view.render_users()
         await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_ai_history_click(self, interaction: discord.Interaction):
+        await self.parent_view.render_user_ai_history(self.user_id, page=1, back_to_users=self.back_to_users)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_cmd_history_click(self, interaction: discord.Interaction):
+        await self.parent_view.render_user_command_history(self.user_id, page=1, back_to_users=self.back_to_users)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_export_click(self, interaction: discord.Interaction):
+        user_name = str(self.target_user) if self.target_user else str(self.user_id)
+        raw_log = await self.bot.db_manager.export_user_complete_audit_log(self.user_id, user_display=user_name)
+        file_obj = discord.File(io.BytesIO(raw_log.encode("utf-8")), filename=f"user_audit_{self.user_id}.txt")
+        await interaction.response.send_message(f"📄 **Forensic audit log for User `{self.user_id}` generated:**", file=file_obj, ephemeral=True)
 
     async def _on_blacklist_click(self, interaction: discord.Interaction):
         await interaction.response.send_modal(BlacklistModal(self.bot, self.user_id, self.parent_view))
@@ -1209,17 +1329,185 @@ class UserAuditContainer(ui.Container):
         await self.bot.db_manager.unblacklist_user(self.user_id)
         self.bot.blacklist_cache.discard(self.user_id)
         if hasattr(self.parent_view, "render_user_audit"):
-            await self.parent_view.render_user_audit(self.user_id)
+            await self.parent_view.render_user_audit(self.user_id, back_to_users=self.back_to_users)
         elif hasattr(self.parent_view, "render_user"):
             await self.parent_view.render_user(self.user_id)
         await interaction.response.edit_message(view=self.parent_view)
 
     async def _on_reload_click(self, interaction: discord.Interaction):
         if hasattr(self.parent_view, "render_user_audit"):
-            await self.parent_view.render_user_audit(self.user_id)
+            await self.parent_view.render_user_audit(self.user_id, back_to_users=self.back_to_users)
         elif hasattr(self.parent_view, "render_user"):
             await self.parent_view.render_user(self.user_id)
         await interaction.response.edit_message(view=self.parent_view)
+
+
+class UserAIHistoryContainer(ui.Container):
+    def __init__(self, bot, user_id: int, rows: list, page: int, total_pages: int, total_count: int, parent_view = None, back_to_users: bool = False):
+        super().__init__()
+        self.bot = bot
+        self.user_id = user_id
+        self.rows = rows
+        self.page = page
+        self.total_pages = total_pages
+        self.total_count = total_count
+        self.parent_view = parent_view
+        self.back_to_users = back_to_users
+        self._build_ui()
+
+    def _build_ui(self):
+        back_btn = ui.Button(label="< Back to Dossier", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_to_dossier
+        header_section = ui.Section(
+            ui.TextDisplay(f"### 🤖 User AI Queries ({self.total_count:,} total)\n-# Page {self.page} of {self.total_pages} • User ID: `{self.user_id}`"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        if not self.rows:
+            self.add_item(ui.TextDisplay("*No AI queries recorded for this user.*"))
+        else:
+            for idx, (mname, prov, ptext, itok, otok, lat, gid, cid, ts, cost) in enumerate(self.rows, start=1):
+                guild_obj = self.bot.get_guild(gid) if gid else None
+                g_name = f"'{guild_obj.name}'" if guild_obj else f"Guild {gid}"
+                try:
+                    dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+                except Exception:
+                    t_str = ts
+                
+                snippet = ptext if ptext else "*[No prompt recorded]*"
+                item_text = (
+                    f"**{idx + (self.page - 1) * 5}.** \"{snippet}\"\n"
+                    f"-# ↳ `{mname}` • {(itok or 0) + (otok or 0)} tok ({lat}ms) in {g_name} • {t_str}"
+                )
+                self.add_item(ui.TextDisplay(item_text))
+
+        self.add_item(ui.Separator())
+
+        # Pagination Buttons
+        nav_row = ui.ActionRow()
+        prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(self.page <= 1))
+        prev_btn.callback = self._on_prev
+        nav_row.add_item(prev_btn)
+
+        page_btn = ui.Button(label=f"{self.page} / {self.total_pages}", style=discord.ButtonStyle.secondary, disabled=True)
+        nav_row.add_item(page_btn)
+
+        next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(self.page >= self.total_pages))
+        next_btn.callback = self._on_next
+        nav_row.add_item(next_btn)
+
+        export_btn = ui.Button(label="Export Log", emoji="📥", style=discord.ButtonStyle.secondary)
+        export_btn.callback = self._on_export
+        nav_row.add_item(export_btn)
+
+        self.add_item(nav_row)
+
+    async def _on_back_to_dossier(self, interaction: discord.Interaction):
+        if hasattr(self.parent_view, "render_user_audit"):
+            await self.parent_view.render_user_audit(self.user_id, back_to_users=self.back_to_users)
+        elif hasattr(self.parent_view, "render_user"):
+            await self.parent_view.render_user(self.user_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_prev(self, interaction: discord.Interaction):
+        await self.parent_view.render_user_ai_history(self.user_id, page=self.page - 1, back_to_users=self.back_to_users)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_next(self, interaction: discord.Interaction):
+        await self.parent_view.render_user_ai_history(self.user_id, page=self.page + 1, back_to_users=self.back_to_users)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_export(self, interaction: discord.Interaction):
+        raw_log = await self.bot.db_manager.export_user_complete_audit_log(self.user_id)
+        file_obj = discord.File(io.BytesIO(raw_log.encode("utf-8")), filename=f"user_audit_{self.user_id}.txt")
+        await interaction.response.send_message(f"📄 **Forensic audit log for User `{self.user_id}` generated:**", file=file_obj, ephemeral=True)
+
+
+class UserCommandHistoryContainer(ui.Container):
+    def __init__(self, bot, user_id: int, rows: list, page: int, total_pages: int, total_count: int, parent_view = None, back_to_users: bool = False):
+        super().__init__()
+        self.bot = bot
+        self.user_id = user_id
+        self.rows = rows
+        self.page = page
+        self.total_pages = total_pages
+        self.total_count = total_count
+        self.parent_view = parent_view
+        self.back_to_users = back_to_users
+        self._build_ui()
+
+    def _build_ui(self):
+        back_btn = ui.Button(label="< Back to Dossier", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_to_dossier
+        header_section = ui.Section(
+            ui.TextDisplay(f"### ⌨️ User Command History ({self.total_count:,} total)\n-# Page {self.page} of {self.total_pages} • User ID: `{self.user_id}`"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        if not self.rows:
+            self.add_item(ui.TextDisplay("*No commands recorded for this user.*"))
+        else:
+            for idx, (cname, gid, cid, is_slash, ex_time, succ, ts) in enumerate(self.rows, start=1):
+                guild_obj = self.bot.get_guild(gid) if gid else None
+                g_name = f"'{guild_obj.name}'" if guild_obj else f"Guild {gid}"
+                status_icon = "✅" if succ else "❌"
+                try:
+                    dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+                except Exception:
+                    t_str = ts
+                slash_badge = "Slash" if is_slash else "Prefix"
+                item_text = (
+                    f"**{idx + (self.page - 1) * 8}.** `{cname}` {status_icon}\n"
+                    f"-# ↳ {slash_badge} ({ex_time}ms) in {g_name} • {t_str}"
+                )
+                self.add_item(ui.TextDisplay(item_text))
+
+        self.add_item(ui.Separator())
+
+        # Pagination Buttons
+        nav_row = ui.ActionRow()
+        prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(self.page <= 1))
+        prev_btn.callback = self._on_prev
+        nav_row.add_item(prev_btn)
+
+        page_btn = ui.Button(label=f"{self.page} / {self.total_pages}", style=discord.ButtonStyle.secondary, disabled=True)
+        nav_row.add_item(page_btn)
+
+        next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(self.page >= self.total_pages))
+        next_btn.callback = self._on_next
+        nav_row.add_item(next_btn)
+
+        export_btn = ui.Button(label="Export Log", emoji="📥", style=discord.ButtonStyle.secondary)
+        export_btn.callback = self._on_export
+        nav_row.add_item(export_btn)
+
+        self.add_item(nav_row)
+
+    async def _on_back_to_dossier(self, interaction: discord.Interaction):
+        if hasattr(self.parent_view, "render_user_audit"):
+            await self.parent_view.render_user_audit(self.user_id, back_to_users=self.back_to_users)
+        elif hasattr(self.parent_view, "render_user"):
+            await self.parent_view.render_user(self.user_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_prev(self, interaction: discord.Interaction):
+        await self.parent_view.render_user_command_history(self.user_id, page=self.page - 1, back_to_users=self.back_to_users)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_next(self, interaction: discord.Interaction):
+        await self.parent_view.render_user_command_history(self.user_id, page=self.page + 1, back_to_users=self.back_to_users)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_export(self, interaction: discord.Interaction):
+        raw_log = await self.bot.db_manager.export_user_complete_audit_log(self.user_id)
+        file_obj = discord.File(io.BytesIO(raw_log.encode("utf-8")), filename=f"user_audit_{self.user_id}.txt")
+        await interaction.response.send_message(f"📄 **Forensic audit log for User `{self.user_id}` generated:**", file=file_obj, ephemeral=True)
 
 
 class UserAuditLayoutView(ui.LayoutView):
@@ -1245,6 +1533,332 @@ class UserAuditLayoutView(ui.LayoutView):
             except Exception:
                 target_user = None
         container = UserAuditContainer(self.bot, user_id, dossier, target_user=target_user, parent_view=self, back_to_users=False)
+        self.add_item(container)
+
+    async def render_user_ai_history(self, user_id: int, page: int = 1, back_to_users: bool = False):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_user_ai_history_paginated(user_id, page=page)
+        container = UserAIHistoryContainer(self.bot, user_id, rows, page, total_pages, total_count, parent_view=self, back_to_users=back_to_users)
+        self.add_item(container)
+
+    async def render_user_command_history(self, user_id: int, page: int = 1, back_to_users: bool = False):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_user_command_history_paginated(user_id, page=page)
+        container = UserCommandHistoryContainer(self.bot, user_id, rows, page, total_pages, total_count, parent_view=self, back_to_users=back_to_users)
+        self.add_item(container)
+
+
+class GuildAuditContainer(ui.Container):
+    def __init__(self, bot, guild_id: int, dossier: dict, target_guild: Optional[discord.Guild] = None, parent_view = None, back_to_guilds: bool = False):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
+        self.dossier = dossier
+        self.target_guild = target_guild
+        self.parent_view = parent_view
+        self.back_to_guilds = back_to_guilds
+        self._build_ui()
+
+    def _build_ui(self):
+        g_name = self.target_guild.name if self.target_guild else f"Guild `{self.guild_id}`"
+        settings = self.dossier.get("settings", {})
+        is_prem = settings.get("is_premium", False)
+        plan_badge = "👑 **PREMIUM**" if is_prem else "🆓 **FREE SNAPSHOT**"
+
+        if self.back_to_guilds and self.parent_view:
+            back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+            back_btn.callback = self._on_back_to_guilds
+            header_section = ui.Section(
+                ui.TextDisplay(f"### 🏰 Server Intelligence Dossier\n-# Target: {g_name} (`{self.guild_id}`) • Plan: {plan_badge}"),
+                accessory=back_btn
+            )
+            self.add_item(header_section)
+        else:
+            self.add_item(ui.TextDisplay(f"### 🏰 Server Intelligence Dossier\n-# Target: {g_name} (`{self.guild_id}`) • Plan: {plan_badge}"))
+
+        self.add_item(ui.Separator())
+
+        # 2. Server Overview
+        owner_str = f"<@{self.target_guild.owner_id}>" if (self.target_guild and self.target_guild.owner_id) else "Unknown"
+        mcount = self.target_guild.member_count if self.target_guild else self.dossier.get("initial_members", 0)
+        joined_val = self.dossier.get("joined_at")
+        joined_str = f"<t:{int(datetime.datetime.fromisoformat(joined_val.replace('Z', '+00:00')).timestamp())}:R>" if joined_val else "Unknown"
+
+        overview_text = (
+            f"**Server Owner:** {owner_str} • **Members:** `{mcount:,}`\n"
+            f"**Bot Joined:** {joined_str} • **Prefix:** `{settings.get('prefix', '!')}`\n"
+            f"**Lifetime Volume:** `{self.dossier.get('total_commands', 0):,}` commands • `{self.dossier.get('total_ai_queries', 0):,}` AI queries (`{self.dossier.get('total_tokens', 0):,}` tokens)"
+        )
+        self.add_item(ui.TextDisplay(overview_text))
+        self.add_item(ui.Separator())
+
+        # 3. Top Active Users in Server
+        top_users = self.dossier.get("top_users", [])
+        u_lines = []
+        for uid, count in top_users[:4]:
+            u_lines.append(f"• <@{uid}> (`{uid}`): **{count:,}** runs")
+        top_u_str = "\n".join(u_lines) if u_lines else "*No command activity recorded in this server.*"
+        self.add_item(ui.TextDisplay(f"**Top Server Users:**\n{top_u_str}"))
+        self.add_item(ui.Separator())
+
+        # 4. Recent AI Prompts in Server
+        ai_rows = self.dossier.get("recent_ai", [])
+        ai_lines = []
+        for uid, mname, ptext, itok, otok, lat, cid, ts in ai_rows[:3]:
+            try:
+                dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+            except Exception:
+                t_str = ts
+            snippet = f'"{ptext[:85]}..."' if ptext else "*[No prompt captured]*"
+            ai_lines.append(f"• <@{uid}>: {snippet}\n  -# ↳ {mname} • {(itok or 0) + (otok or 0)} tok in <#{cid}> • {t_str}")
+
+        ai_content = "\n".join(ai_lines) if ai_lines else "*No AI queries logged in this server.*"
+        self.add_item(ui.TextDisplay(f"**🤖 Recent Server AI Queries:**\n{ai_content}"))
+        self.add_item(ui.Separator())
+
+        # 5. Action Row 1: Sub-history & Export
+        row1 = ui.ActionRow()
+        ai_hist_btn = ui.Button(label="AI History", emoji="🤖", style=discord.ButtonStyle.primary)
+        ai_hist_btn.callback = self._on_ai_history_click
+        row1.add_item(ai_hist_btn)
+
+        cmd_hist_btn = ui.Button(label="Commands", emoji="⌨️", style=discord.ButtonStyle.primary)
+        cmd_hist_btn.callback = self._on_cmd_history_click
+        row1.add_item(cmd_hist_btn)
+
+        export_btn = ui.Button(label="Export Log", emoji="📥", style=discord.ButtonStyle.secondary)
+        export_btn.callback = self._on_export_click
+        row1.add_item(export_btn)
+        self.add_item(row1)
+
+        # 6. Action Row 2: Reload
+        row2 = ui.ActionRow()
+        ref_btn = ui.Button(label="Reload", emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_reload_click
+        row2.add_item(ref_btn)
+        self.add_item(row2)
+
+    async def _on_back_to_guilds(self, interaction: discord.Interaction):
+        await self.parent_view.render_guilds()
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_ai_history_click(self, interaction: discord.Interaction):
+        await self.parent_view.render_guild_ai_history(self.guild_id, page=1, back_to_guilds=self.back_to_guilds)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_cmd_history_click(self, interaction: discord.Interaction):
+        await self.parent_view.render_guild_command_history(self.guild_id, page=1, back_to_guilds=self.back_to_guilds)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_export_click(self, interaction: discord.Interaction):
+        g_name = self.target_guild.name if self.target_guild else str(self.guild_id)
+        raw_log = await self.bot.db_manager.export_guild_complete_audit_log(self.guild_id, guild_name=g_name)
+        file_obj = discord.File(io.BytesIO(raw_log.encode("utf-8")), filename=f"guild_audit_{self.guild_id}.txt")
+        await interaction.response.send_message(f"📄 **Forensic audit log for Server `{self.guild_id}` generated:**", file=file_obj, ephemeral=True)
+
+    async def _on_reload_click(self, interaction: discord.Interaction):
+        if hasattr(self.parent_view, "render_guild_audit"):
+            await self.parent_view.render_guild_audit(self.guild_id, back_to_guilds=self.back_to_guilds)
+        elif hasattr(self.parent_view, "render_guild"):
+            await self.parent_view.render_guild(self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class GuildAIHistoryContainer(ui.Container):
+    def __init__(self, bot, guild_id: int, rows: list, page: int, total_pages: int, total_count: int, parent_view = None, back_to_guilds: bool = False):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
+        self.rows = rows
+        self.page = page
+        self.total_pages = total_pages
+        self.total_count = total_count
+        self.parent_view = parent_view
+        self.back_to_guilds = back_to_guilds
+        self._build_ui()
+
+    def _build_ui(self):
+        back_btn = ui.Button(label="< Back to Server Dossier", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_to_dossier
+        header_section = ui.Section(
+            ui.TextDisplay(f"### 🤖 Server AI Prompts ({self.total_count:,} total)\n-# Page {self.page} of {self.total_pages} • Server ID: `{self.guild_id}`"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        if not self.rows:
+            self.add_item(ui.TextDisplay("*No AI queries recorded for this server.*"))
+        else:
+            for idx, (uid, mname, prov, ptext, itok, otok, lat, cid, ts, cost) in enumerate(self.rows, start=1):
+                try:
+                    dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+                except Exception:
+                    t_str = ts
+                
+                snippet = ptext if ptext else "*[No prompt recorded]*"
+                item_text = (
+                    f"**{idx + (self.page - 1) * 5}.** <@{uid}>: \"{snippet}\"\n"
+                    f"-# ↳ `{mname}` • {(itok or 0) + (otok or 0)} tok ({lat}ms) in <#{cid}> • {t_str}"
+                )
+                self.add_item(ui.TextDisplay(item_text))
+
+        self.add_item(ui.Separator())
+
+        # Pagination Buttons
+        nav_row = ui.ActionRow()
+        prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(self.page <= 1))
+        prev_btn.callback = self._on_prev
+        nav_row.add_item(prev_btn)
+
+        page_btn = ui.Button(label=f"{self.page} / {self.total_pages}", style=discord.ButtonStyle.secondary, disabled=True)
+        nav_row.add_item(page_btn)
+
+        next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(self.page >= self.total_pages))
+        next_btn.callback = self._on_next
+        nav_row.add_item(next_btn)
+
+        export_btn = ui.Button(label="Export Log", emoji="📥", style=discord.ButtonStyle.secondary)
+        export_btn.callback = self._on_export
+        nav_row.add_item(export_btn)
+
+        self.add_item(nav_row)
+
+    async def _on_back_to_dossier(self, interaction: discord.Interaction):
+        if hasattr(self.parent_view, "render_guild_audit"):
+            await self.parent_view.render_guild_audit(self.guild_id, back_to_guilds=self.back_to_guilds)
+        elif hasattr(self.parent_view, "render_guild"):
+            await self.parent_view.render_guild(self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_prev(self, interaction: discord.Interaction):
+        await self.parent_view.render_guild_ai_history(self.guild_id, page=self.page - 1, back_to_guilds=self.back_to_guilds)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_next(self, interaction: discord.Interaction):
+        await self.parent_view.render_guild_ai_history(self.guild_id, page=self.page + 1, back_to_guilds=self.back_to_guilds)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_export(self, interaction: discord.Interaction):
+        raw_log = await self.bot.db_manager.export_guild_complete_audit_log(self.guild_id)
+        file_obj = discord.File(io.BytesIO(raw_log.encode("utf-8")), filename=f"guild_audit_{self.guild_id}.txt")
+        await interaction.response.send_message(f"📄 **Forensic audit log for Server `{self.guild_id}` generated:**", file=file_obj, ephemeral=True)
+
+
+class GuildCommandHistoryContainer(ui.Container):
+    def __init__(self, bot, guild_id: int, rows: list, page: int, total_pages: int, total_count: int, parent_view = None, back_to_guilds: bool = False):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
+        self.rows = rows
+        self.page = page
+        self.total_pages = total_pages
+        self.total_count = total_count
+        self.parent_view = parent_view
+        self.back_to_guilds = back_to_guilds
+        self._build_ui()
+
+    def _build_ui(self):
+        back_btn = ui.Button(label="< Back to Server Dossier", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_to_dossier
+        header_section = ui.Section(
+            ui.TextDisplay(f"### ⌨️ Server Command History ({self.total_count:,} total)\n-# Page {self.page} of {self.total_pages} • Server ID: `{self.guild_id}`"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        if not self.rows:
+            self.add_item(ui.TextDisplay("*No commands recorded for this server.*"))
+        else:
+            for idx, (uid, cname, cid, is_slash, ex_time, succ, ts) in enumerate(self.rows, start=1):
+                status_icon = "✅" if succ else "❌"
+                try:
+                    dt_obj = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    t_str = f"<t:{int(dt_obj.timestamp())}:R>"
+                except Exception:
+                    t_str = ts
+                slash_badge = "Slash" if is_slash else "Prefix"
+                item_text = (
+                    f"**{idx + (self.page - 1) * 8}.** <@{uid}>: `{cname}` {status_icon}\n"
+                    f"-# ↳ {slash_badge} ({ex_time}ms) in <#{cid}> • {t_str}"
+                )
+                self.add_item(ui.TextDisplay(item_text))
+
+        self.add_item(ui.Separator())
+
+        # Pagination Buttons
+        nav_row = ui.ActionRow()
+        prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(self.page <= 1))
+        prev_btn.callback = self._on_prev
+        nav_row.add_item(prev_btn)
+
+        page_btn = ui.Button(label=f"{self.page} / {self.total_pages}", style=discord.ButtonStyle.secondary, disabled=True)
+        nav_row.add_item(page_btn)
+
+        next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(self.page >= self.total_pages))
+        next_btn.callback = self._on_next
+        nav_row.add_item(next_btn)
+
+        export_btn = ui.Button(label="Export Log", emoji="📥", style=discord.ButtonStyle.secondary)
+        export_btn.callback = self._on_export
+        nav_row.add_item(export_btn)
+
+        self.add_item(nav_row)
+
+    async def _on_back_to_dossier(self, interaction: discord.Interaction):
+        if hasattr(self.parent_view, "render_guild_audit"):
+            await self.parent_view.render_guild_audit(self.guild_id, back_to_guilds=self.back_to_guilds)
+        elif hasattr(self.parent_view, "render_guild"):
+            await self.parent_view.render_guild(self.guild_id)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_prev(self, interaction: discord.Interaction):
+        await self.parent_view.render_guild_command_history(self.guild_id, page=self.page - 1, back_to_guilds=self.back_to_guilds)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_next(self, interaction: discord.Interaction):
+        await self.parent_view.render_guild_command_history(self.guild_id, page=self.page + 1, back_to_guilds=self.back_to_guilds)
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_export(self, interaction: discord.Interaction):
+        raw_log = await self.bot.db_manager.export_guild_complete_audit_log(self.guild_id)
+        file_obj = discord.File(io.BytesIO(raw_log.encode("utf-8")), filename=f"guild_audit_{self.guild_id}.txt")
+        await interaction.response.send_message(f"📄 **Forensic audit log for Server `{self.guild_id}` generated:**", file=file_obj, ephemeral=True)
+
+
+class GuildAuditLayoutView(ui.LayoutView):
+    def __init__(self, bot, guild_id: int, timeout=180):
+        super().__init__(timeout=timeout)
+        self.bot = bot
+        self.guild_id = guild_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message(f"{Emojis.ERROR} This dossier is developer-only.", ephemeral=True)
+            return False
+        return True
+
+    async def render_guild(self, guild_id: int):
+        self.clear_items()
+        self.guild_id = guild_id
+        dossier = await self.bot.db_manager.get_guild_audit_dossier(guild_id)
+        target_guild = self.bot.get_guild(guild_id)
+        container = GuildAuditContainer(self.bot, guild_id, dossier, target_guild=target_guild, parent_view=self, back_to_guilds=False)
+        self.add_item(container)
+
+    async def render_guild_ai_history(self, guild_id: int, page: int = 1, back_to_guilds: bool = False):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_guild_ai_history_paginated(guild_id, page=page)
+        container = GuildAIHistoryContainer(self.bot, guild_id, rows, page, total_pages, total_count, parent_view=self, back_to_guilds=back_to_guilds)
+        self.add_item(container)
+
+    async def render_guild_command_history(self, guild_id: int, page: int = 1, back_to_guilds: bool = False):
+        self.clear_items()
+        rows, total_count, total_pages = await self.bot.db_manager.get_guild_command_history_paginated(guild_id, page=page)
+        container = GuildCommandHistoryContainer(self.bot, guild_id, rows, page, total_pages, total_count, parent_view=self, back_to_guilds=back_to_guilds)
         self.add_item(container)
 
 
