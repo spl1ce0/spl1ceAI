@@ -25,16 +25,17 @@ logger = logging.getLogger(__name__)
 
 
 class QuotaContainer(ui.Container):
-    def __init__(self, guild_name: str, usage_data: dict, guild_settings: dict, checkout_url: typing.Optional[str] = None, portal_url: typing.Optional[str] = None):
+    def __init__(self, bot, guild: discord.Guild, usage_data: dict, guild_settings: dict, checkout_url: typing.Optional[str] = None, portal_url: typing.Optional[str] = None):
         super().__init__()
-        self.guild_name = guild_name
+        self.bot = bot
+        self.guild = guild
         self.usage_data = usage_data
         self.guild_settings = guild_settings
         self.checkout_url = checkout_url
         self.portal_url = portal_url
-        self._make_container()
+        self._build_ui()
 
-    def _make_container(self):
+    def _build_ui(self):
         is_premium = bool(self.guild_settings.get("is_premium", 0))
         has_byok = bool(
             self.guild_settings.get("byok_gemini_key") or 
@@ -53,102 +54,171 @@ class QuotaContainer(ui.Container):
             plan_name = "Free Plan"
             token_limit = 100_000
 
-        total_tokens = self.usage_data.get("total_tokens", 0)
+        total_tokens = int(self.usage_data.get("total_tokens", 0))
         reset_ts = self.usage_data.get("next_reset_ts", int(time.time() + 86400 * 7))
-        img_count = self.usage_data.get("image_count", 0)
-        prompt_count = self.usage_data.get("prompt_count", 0)
-        in_tokens = self.usage_data.get("input_tokens", 0)
-        out_tokens = self.usage_data.get("output_tokens", 0)
+        img_count = int(self.usage_data.get("image_count", 0))
 
-        # Calculations
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         days_elapsed = max(1, now_utc.weekday() + 1)
         daily_avg = int(total_tokens / days_elapsed)
+        days_left = max(1, int((reset_ts - now_utc.timestamp()) / 86400))
+        projected = total_tokens + (daily_avg * days_left)
 
-        pct = 0.0
+        # ----------------------------------------------------
+        # 1. HEADER: Title, Server Name, Plan
+        # ----------------------------------------------------
+        self.add_item(ui.TextDisplay(f"## AI Quota\n-# {self.guild.name} • {plan_name}"))
+        self.add_item(ui.Separator())
+
+        # ----------------------------------------------------
+        # 2. USAGE: 2nd Title, Bar, Token Count, Image Gens, Image Reset
+        # ----------------------------------------------------
         if token_limit:
             pct = min(100.0, (total_tokens / token_limit) * 100.0)
-            filled = min(10, max(0, int(round((pct / 100.0) * 10))))
-            if pct < 70.0:
-                fill_char = "🟩"
-            elif pct < 90.0:
-                fill_char = "🟨"
-            else:
-                fill_char = "🟥"
-            bar = fill_char * filled + "⬛" * (10 - filled)
-            
-            days_left = max(1, int((reset_ts - now_utc.timestamp()) / 86400))
-            projected = total_tokens + (daily_avg * days_left)
-            burn_sub = "*(On track ✅)*" if projected <= token_limit else "*(At risk ⚠️)*"
-        else:
-            bar = "🟢 Unlimited"
-            burn_sub = ""
-
-        # Image text compact
-        if has_byok:
-            img_text_compact = f"{img_count} generated (Unlimited)"
-        elif is_premium:
-            img_text_compact = f"{img_count} / 10 this week"
-        else:
-            next_img = self.usage_data.get("next_image_reset_ts")
-            next_img_str = f" • Resets <t:{next_img}:R>" if next_img else ""
-            img_text_compact = f"{img_count} / 1{next_img_str}"
-
-        # ----------------------------------------------------
-        # RENDER GRID SUMMARY LAYOUT
-        # ----------------------------------------------------
-        self.add_item(ui.TextDisplay(f"# AI Quota\n-# {self.guild_name}"))
-        self.add_item(ui.Separator())
-
-        if token_limit:
-            plan_card = (
-                f"**{plan_name}**\n"
-                f"{total_tokens:,} / {token_limit:,} Tokens ({pct:.1f}%)\n"
+            filled = min(16, max(0, int(round((pct / 100.0) * 16))))
+            bar = "█" * filled + "░" * (16 - filled)
+            token_block = (
                 f"{bar}\n"
-                f"-# Resets <t:{reset_ts}:R> (<t:{reset_ts}:D>) • ~{daily_avg:,} tokens/day {burn_sub}"
+                f"{total_tokens:,} / {token_limit:,} tokens ({pct:.1f}%)\n"
+                f"-# Resets <t:{reset_ts}:R>"
             )
         else:
-            plan_card = (
-                f"**{plan_name}**\n"
-                f"{total_tokens:,} Tokens Consumed\n"
-                f"-# 🟢 Unlimited • ~{daily_avg:,} tokens/day"
+            pct = 0.0
+            token_block = (
+                f"{total_tokens:,} tokens consumed this week\n"
+                f"-# Unlimited quota active via custom API keys"
             )
-        self.add_item(ui.TextDisplay(plan_card))
+
+        if has_byok:
+            img_block = (
+                f"{img_count} images used (Unlimited)\n"
+                f"-# Unmetered via custom API keys"
+            )
+        elif is_premium:
+            pct_img = min(100.0, (img_count / 10.0) * 100.0)
+            filled_img = min(16, max(0, int(round((pct_img / 100.0) * 16))))
+            bar_img = "█" * filled_img + "░" * (16 - filled_img)
+            img_block = (
+                f"{bar_img}\n"
+                f"{img_count} / 10 images used ({pct_img:.0f}%)\n"
+                f"-# Resets <t:{reset_ts}:R>"
+            )
+        else:
+            last_img = float(self.usage_data.get("last_image_ts", 0) or 0)
+            if last_img > 0 and (time.time() - last_img < 14 * 86400):
+                bar_img = "█" * 16
+                next_img_ts = int(last_img + 14 * 86400)
+                img_block = (
+                    f"{bar_img}\n"
+                    f"1 / 1 images used (100%)\n"
+                    f"-# Resets <t:{next_img_ts}:R>"
+                )
+            else:
+                bar_img = "░" * 16
+                img_block = (
+                    f"{bar_img}\n"
+                    f"0 / 1 images used (0%)\n"
+                    f"-# 1 generation included every 2 weeks"
+                )
+
+        usage_text = (
+            f"### Usage\n"
+            f"{token_block}\n\n"
+            f"{img_block}"
+        )
+        self.add_item(ui.TextDisplay(usage_text))
         self.add_item(ui.Separator())
 
-        usage_card = (
-            f"**Usage Summary**\n"
-            f"💬 **Prompts:** {prompt_count:,} requests\n"
-            f"📊 **Data:** {in_tokens:,} Input • {out_tokens:,} Output\n"
-            f"🖼️ **Images:** {img_text_compact}"
-        )
-        self.add_item(ui.TextDisplay(usage_card))
+        # ----------------------------------------------------
+        # 3. BURN RATE: Tokens Burn Rate & On-Track Metric
+        # ----------------------------------------------------
+        if token_limit:
+            is_exhausted = total_tokens >= token_limit
+            is_on_track = (projected <= token_limit) and (pct < 85.0)
 
-        # Bottom Action / Upgrade Section (strictly when near token limit >= 85%)
-        if not is_premium and not has_byok and self.checkout_url and pct >= 85.0:
+            if is_exhausted:
+                status_str = "🔴 Limit reached"
+                status_desc = "\n-# Weekly token pool is exhausted until the reset."
+            elif is_on_track:
+                status_str = "🟢 Healthy"
+                status_desc = ""
+            else:
+                status_str = "⚠️ High burn rate"
+                status_desc = f"\n-# Projected to reach ~{projected:,} tokens before reset."
+
+            burn_rate_text = (
+                f"### Burn Rate\n"
+                f"~{daily_avg:,} tokens/day • {status_str}"
+                f"{status_desc}"
+            )
+        else:
+            burn_rate_text = (
+                f"### Burn Rate\n"
+                f"~{daily_avg:,} tokens/day • 🟢 Unmetered"
+            )
+
+        self.add_item(ui.TextDisplay(burn_rate_text))
+
+        # ----------------------------------------------------
+        # 4. UPGRADE REMINDER: Shown when quota is almost over AND not on track
+        # ----------------------------------------------------
+        show_upgrade = (not is_premium) and (not has_byok) and ((pct >= 75.0) or (not is_on_track) or is_exhausted)
+        if show_upgrade:
             self.add_item(ui.Separator())
-            upgrade_display = ui.TextDisplay(
+            upgrade_text = (
                 f"**Need More Capacity?**\n"
-                f"-# 500k tokens/wk, 30-msg history & vision"
+                f"-# Upgrade to Premium for 500,000 tokens/week, 30-message memory, and image vision."
             )
-            upgrade_btn = ui.Button(
-                label="👑 Upgrade",
-                url=self.checkout_url,
-                style=discord.ButtonStyle.link
-            )
-            self.add_item(ui.Section(upgrade_display, accessory=upgrade_btn))
+            self.add_item(ui.TextDisplay(upgrade_text))
+
+        # ----------------------------------------------------
+        # 5. BUTTON ACTIONS (Upgrade or Portal if available)
+        # ----------------------------------------------------
+        if show_upgrade and self.checkout_url:
+            self.add_item(ui.Separator())
+            action_row = ui.ActionRow()
+            upgrade_btn = ui.Button(label="Upgrade Plan", emoji="👑", url=self.checkout_url, style=discord.ButtonStyle.link)
+            action_row.add_item(upgrade_btn)
+            self.add_item(action_row)
         elif is_premium and self.portal_url:
             self.add_item(ui.Separator())
-            portal_display = ui.TextDisplay(
-                f"**Premium Active**\n"
-                f"-# 500k tokens/wk, 30-msg context & vision enabled."
-            )
-            portal_btn = ui.Button(
-                label="Manage Subscription",
-                url=self.portal_url,
-                style=discord.ButtonStyle.link
-            )
-            self.add_item(ui.Section(portal_display, accessory=portal_btn))
+            action_row = ui.ActionRow()
+            portal_btn = ui.Button(label="Manage Subscription", emoji="⚙️", url=self.portal_url, style=discord.ButtonStyle.link)
+            action_row.add_item(portal_btn)
+            self.add_item(action_row)
+
+
+class QuotaLayoutView(ui.LayoutView):
+    def __init__(self, bot, guild: discord.Guild, timeout: float = 180):
+        super().__init__(timeout=timeout)
+        self.bot = bot
+        self.guild = guild
+
+    async def render_quota(self, guild: discord.Guild):
+        self.clear_items()
+        self.guild = guild
+        guild_settings = self.bot.settings_cache.get(guild.id, {})
+        usage_data = await self.bot.db_manager.get_guild_weekly_ai_usage(guild.id)
+        
+        checkout_url = None
+        portal_url = None
+        billing_cog = self.bot.get_cog("Billing")
+        if billing_cog and hasattr(billing_cog, "billing_service") and billing_cog.billing_service.is_configured:
+            try:
+                checkout_url = await billing_cog.billing_service.create_checkout_session(
+                    guild_id=guild.id,
+                    user_id=guild.owner_id or 0,
+                    guild_name=guild.name,
+                    user_name="Owner"
+                )
+                sub = await self.bot.db_manager.get_subscription(guild.id)
+                if sub and sub.get("customer_id"):
+                    portal_url = billing_cog.billing_service.get_customer_portal_url(sub["customer_id"])
+            except Exception:
+                pass
+
+        container = QuotaContainer(self.bot, guild, usage_data, guild_settings, checkout_url=checkout_url, portal_url=portal_url)
+        self.add_item(container)
 
 
 class AI(commands.Cog):
@@ -254,29 +324,8 @@ class AI(commands.Cog):
     async def quota(self, ctx: commands.Context):
         """Displays the server's weekly AI token allowance, image generations, and current tier."""
         await ctx.defer()
-        guild_settings = self.bot.settings_cache.get(ctx.guild.id, {})
-        usage_data = await self.bot.db_manager.get_guild_weekly_ai_usage(ctx.guild.id)
-        
-        checkout_url = None
-        portal_url = None
-        billing_cog = self.bot.get_cog("Billing")
-        if billing_cog and hasattr(billing_cog, "billing_service") and billing_cog.billing_service.is_configured:
-            try:
-                checkout_url = await billing_cog.billing_service.create_checkout_session(
-                    guild_id=ctx.guild.id,
-                    user_id=ctx.author.id,
-                    guild_name=ctx.guild.name,
-                    user_name=str(ctx.author)
-                )
-                sub = await self.bot.db_manager.get_subscription(ctx.guild.id)
-                if sub and sub.get("customer_id"):
-                    portal_url = billing_cog.billing_service.get_customer_portal_url(sub["customer_id"])
-            except Exception:
-                pass
-
-        container = QuotaContainer(ctx.guild.name, usage_data, guild_settings, checkout_url=checkout_url, portal_url=portal_url)
-        view = ui.LayoutView(timeout=None)
-        view.add_item(container)
+        view = QuotaLayoutView(self.bot, ctx.guild)
+        await view.render_quota(ctx.guild)
         await ctx.reply(view=view)
 
 

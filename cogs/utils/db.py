@@ -1,5 +1,6 @@
 import logging
 import datetime
+import time
 from typing import Optional, List, Tuple
 from cogs.utils.constants import DefaultSettings
 
@@ -28,6 +29,33 @@ class DatabaseManager:
             )
             await cursor.execute(
                 "CREATE TABLE IF NOT EXISTS ai_usage (day TEXT PRIMARY KEY, request_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0)"
+            )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS guild_weekly_usage ("
+                "guild_id INTEGER, "
+                "week_start TEXT, "
+                "total_tokens INTEGER DEFAULT 0, "
+                "input_tokens INTEGER DEFAULT 0, "
+                "output_tokens INTEGER DEFAULT 0, "
+                "prompt_count INTEGER DEFAULT 0, "
+                "image_count INTEGER DEFAULT 0, "
+                "last_image_ts REAL DEFAULT 0, "
+                "created_at TEXT DEFAULT CURRENT_TIMESTAMP, "
+                "updated_at TEXT DEFAULT CURRENT_TIMESTAMP, "
+                "PRIMARY KEY (guild_id, week_start))"
+            )
+            await cursor.execute(
+                "CREATE TABLE IF NOT EXISTS guild_subscriptions ("
+                "guild_id INTEGER PRIMARY KEY, "
+                "customer_id TEXT, "
+                "subscription_id TEXT, "
+                "status TEXT, "
+                "user_id INTEGER, "
+                "variant_id TEXT, "
+                "current_period_end TEXT, "
+                "cancel_at_period_end INTEGER DEFAULT 0, "
+                "created_at TEXT DEFAULT CURRENT_TIMESTAMP, "
+                "updated_at TEXT DEFAULT CURRENT_TIMESTAMP)"
             )
             await cursor.execute(
                 "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, log_channel INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'openai', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15, show_model INTEGER NOT NULL DEFAULT 1, reply_ping INTEGER NOT NULL DEFAULT 1)"
@@ -454,6 +482,199 @@ class DatabaseManager:
                 "output_tokens = output_tokens + excluded.output_tokens",
                 (day, input_tokens, output_tokens)
             )
+            await self.db.commit()
+
+    @staticmethod
+    def _get_current_week_start() -> str:
+        """Returns the YYYY-MM-DD string for Monday of the current UTC week."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        monday = now - datetime.timedelta(days=now.weekday())
+        return monday.strftime("%Y-%m-%d")
+
+    @staticmethod
+    def _get_next_week_reset_ts() -> int:
+        """Returns the UNIX timestamp for 00:00:00 UTC of next Monday."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        monday = now - datetime.timedelta(days=now.weekday())
+        next_monday = monday + datetime.timedelta(days=7)
+        next_monday_midnight = datetime.datetime(next_monday.year, next_monday.month, next_monday.day, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        return int(next_monday_midnight.timestamp())
+
+    @staticmethod
+    def _parse_timestamp_to_unix(ts_val) -> float:
+        """Robustly parses a timestamp from float, int, or ISO string to UNIX float."""
+        if not ts_val:
+            return 0.0
+        if isinstance(ts_val, (int, float)):
+            return float(ts_val)
+        if isinstance(ts_val, str):
+            try:
+                return float(ts_val)
+            except ValueError:
+                pass
+            try:
+                dt_str = ts_val.replace("Z", "+00:00")
+                if "+" not in dt_str and "T" in dt_str:
+                    dt_str += "+00:00"
+                elif "+" not in dt_str and " " in dt_str:
+                    dt_str = dt_str.replace(" ", "T") + "+00:00"
+                dt_obj = datetime.datetime.fromisoformat(dt_str)
+                return dt_obj.timestamp()
+            except Exception:
+                return 0.0
+        return 0.0
+
+    async def get_guild_weekly_ai_usage(self, guild_id: int) -> dict:
+        """Fetches weekly token, prompt, and image usage for a server."""
+        week_start = self._get_current_week_start()
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT total_tokens, input_tokens, output_tokens, prompt_count, image_count, last_image_ts "
+                "FROM guild_weekly_usage WHERE guild_id = ? AND week_start = ?",
+                (guild_id, week_start)
+            )
+            row = await cursor.fetchone()
+            next_reset_ts = self._get_next_week_reset_ts()
+            if row:
+                last_img_ts = self._parse_timestamp_to_unix(row[5])
+                next_img_ts = int(last_img_ts + 14 * 86400) if last_img_ts > 0 else 0
+                return {
+                    "week_start": week_start,
+                    "total_tokens": int(row[0] or 0),
+                    "input_tokens": int(row[1] or 0),
+                    "output_tokens": int(row[2] or 0),
+                    "prompt_count": int(row[3] or 0),
+                    "image_count": int(row[4] or 0),
+                    "last_image_ts": last_img_ts,
+                    "next_reset_ts": next_reset_ts,
+                    "next_image_reset_ts": next_img_ts
+                }
+            return {
+                "week_start": week_start,
+                "total_tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "prompt_count": 0,
+                "image_count": 0,
+                "last_image_ts": 0.0,
+                "next_reset_ts": next_reset_ts,
+                "next_image_reset_ts": 0
+            }
+
+    async def record_guild_ai_usage(self, guild_id: int, input_tokens: int, output_tokens: int, is_image: bool = False) -> None:
+        """Records token and image consumption for a server's weekly quota."""
+        week_start = self._get_current_week_start()
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        total_tokens = input_tokens + output_tokens
+        img_increment = 1 if is_image else 0
+        
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT INTO guild_weekly_usage (guild_id, week_start, total_tokens, input_tokens, output_tokens, prompt_count, image_count, last_image_ts, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(guild_id, week_start) DO UPDATE SET "
+                "total_tokens = total_tokens + excluded.total_tokens, "
+                "input_tokens = input_tokens + excluded.input_tokens, "
+                "output_tokens = output_tokens + excluded.output_tokens, "
+                "prompt_count = prompt_count + 1, "
+                "image_count = image_count + excluded.image_count, "
+                "last_image_ts = CASE WHEN excluded.image_count > 0 THEN excluded.last_image_ts ELSE last_image_ts END, "
+                "updated_at = CURRENT_TIMESTAMP",
+                (guild_id, week_start, total_tokens, input_tokens, output_tokens, img_increment, now_iso if is_image else None)
+            )
+            await self.db.commit()
+
+    async def check_ai_quota_allowance(self, guild_id: Optional[int], guild_settings: dict, is_image: bool = False) -> Tuple[bool, Optional[str], dict]:
+        """Validates whether the server has sufficient quota for text or image generation."""
+        if not guild_id:
+            return True, None, {}
+        
+        has_byok = bool(
+            guild_settings.get("byok_gemini_key") or 
+            guild_settings.get("byok_xai_key") or 
+            guild_settings.get("byok_openai_key") or 
+            guild_settings.get("byok_anthropic_key")
+        )
+        usage = await self.get_guild_weekly_ai_usage(guild_id)
+        if has_byok:
+            return True, None, usage
+        
+        is_premium = bool(guild_settings.get("is_premium", 0))
+        
+        if is_image:
+            if is_premium:
+                if usage["image_count"] >= 10:
+                    return False, f"Server has reached the Premium weekly limit of 10 image generations. Resets <t:{usage['next_reset_ts']}:R>.", usage
+            else:
+                last_img = float(usage.get("last_image_ts", 0.0) or 0.0)
+                if last_img > 0:
+                    time_since = time.time() - last_img
+                    fourteen_days = 14 * 86400
+                    if time_since < fourteen_days:
+                        res_ts = int(last_img + fourteen_days)
+                        return False, f"Free plan allows 1 AI image generation every 2 weeks. Available again <t:{res_ts}:R>.", usage
+        else:
+            token_limit = 500_000 if is_premium else 100_000
+            if usage["total_tokens"] >= token_limit:
+                tier_name = "Premium (500k)" if is_premium else "Free (100k)"
+                return False, f"Server has reached the weekly {tier_name} token quota ({usage['total_tokens']:,} / {token_limit:,}). Resets <t:{usage['next_reset_ts']}:R>.", usage
+        
+        return True, None, usage
+
+    # --- Subscription Management ---
+
+    async def get_subscription(self, guild_id: int) -> Optional[dict]:
+        """Fetches subscription details for a guild."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT customer_id, subscription_id, status, user_id, variant_id, current_period_end, cancel_at_period_end "
+                "FROM guild_subscriptions WHERE guild_id = ?",
+                (guild_id,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                return {
+                    "customer_id": row[0],
+                    "subscription_id": row[1],
+                    "status": row[2],
+                    "user_id": row[3],
+                    "variant_id": row[4],
+                    "current_period_end": row[5],
+                    "cancel_at_period_end": bool(row[6])
+                }
+            return None
+
+    async def save_subscription(
+        self, 
+        guild_id: int, 
+        customer_id: str, 
+        subscription_id: str, 
+        status: str, 
+        user_id: int = 0, 
+        variant_id: str = "", 
+        current_period_end: str = ""
+    ) -> None:
+        """Saves or updates guild subscription state."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                "INSERT INTO guild_subscriptions (guild_id, customer_id, subscription_id, status, user_id, variant_id, current_period_end, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(guild_id) DO UPDATE SET "
+                "customer_id = excluded.customer_id, "
+                "subscription_id = excluded.subscription_id, "
+                "status = excluded.status, "
+                "user_id = excluded.user_id, "
+                "variant_id = excluded.variant_id, "
+                "current_period_end = excluded.current_period_end, "
+                "updated_at = CURRENT_TIMESTAMP",
+                (guild_id, customer_id, subscription_id, status, user_id, variant_id, current_period_end)
+            )
+            await self.db.commit()
+
+    async def delete_subscription(self, guild_id: int) -> None:
+        """Deletes guild subscription record."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("DELETE FROM guild_subscriptions WHERE guild_id = ?", (guild_id,))
             await self.db.commit()
 
     # --- System State (Restart Info) Management ---
