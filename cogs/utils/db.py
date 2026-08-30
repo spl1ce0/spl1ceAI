@@ -261,6 +261,46 @@ class DatabaseManager:
                 logger.info("Migration: Adding reply_ping column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN reply_ping INTEGER NOT NULL DEFAULT 1")
                 migrated = True
+            if "is_premium" not in columns:
+                logger.info("Migration: Adding is_premium column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN is_premium INTEGER NOT NULL DEFAULT 0")
+                migrated = True
+            if "custom_prompt" not in columns:
+                logger.info("Migration: Adding custom_prompt column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN custom_prompt TEXT")
+                migrated = True
+            if "byok_gemini_key" not in columns:
+                logger.info("Migration: Adding byok_gemini_key column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_gemini_key TEXT")
+                migrated = True
+            if "byok_xai_key" not in columns:
+                logger.info("Migration: Adding byok_xai_key column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_xai_key TEXT")
+                migrated = True
+            if "byok_openai_key" not in columns:
+                logger.info("Migration: Adding byok_openai_key column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_openai_key TEXT")
+                migrated = True
+            if "byok_anthropic_key" not in columns:
+                logger.info("Migration: Adding byok_anthropic_key column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_anthropic_key TEXT")
+                migrated = True
+            if "footer_show_icon" not in columns:
+                logger.info("Migration: Adding footer_show_icon column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_icon INTEGER NOT NULL DEFAULT 1")
+                migrated = True
+            if "footer_show_name" not in columns:
+                logger.info("Migration: Adding footer_show_name column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_name INTEGER NOT NULL DEFAULT 1")
+                migrated = True
+            if "footer_show_tokens" not in columns:
+                logger.info("Migration: Adding footer_show_tokens column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_tokens INTEGER NOT NULL DEFAULT 1")
+                migrated = True
+            if "footer_show_latency" not in columns:
+                logger.info("Migration: Adding footer_show_latency column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_latency INTEGER NOT NULL DEFAULT 1")
+                migrated = True
                 
             if migrated:
                 await self.db.commit()
@@ -319,7 +359,8 @@ class DatabaseManager:
         """Fetches all guild settings from the database during bot startup."""
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "SELECT guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, log_channel, show_model, reply_ping "
+                "SELECT guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, log_channel, show_model, reply_ping, "
+                "is_premium, custom_prompt, byok_gemini_key, byok_xai_key, byok_openai_key, byok_anthropic_key, footer_show_icon, footer_show_name, footer_show_tokens, footer_show_latency "
                 "FROM guild_settings"
             )
             return await cursor.fetchall()
@@ -328,8 +369,8 @@ class DatabaseManager:
         """Inserts default settings for a newly joined or unconfigured guild."""
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, log_channel, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, show_model, reply_ping) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, log_channel, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, show_model, reply_ping, footer_show_icon, footer_show_name, footer_show_tokens, footer_show_latency) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     guild_id, 
                     DefaultSettings.PREFIX, 
@@ -341,7 +382,11 @@ class DatabaseManager:
                     DefaultSettings.LLM_BACKUP3, 
                     DefaultSettings.LLM_TIMEOUT,
                     DefaultSettings.SHOW_MODEL,
-                    DefaultSettings.REPLY_PING
+                    DefaultSettings.REPLY_PING,
+                    DefaultSettings.FOOTER_SHOW_ICON,
+                    DefaultSettings.FOOTER_SHOW_NAME,
+                    DefaultSettings.FOOTER_SHOW_TOKENS,
+                    DefaultSettings.FOOTER_SHOW_LATENCY
                 )
             )
             await self.db.commit()
@@ -350,7 +395,10 @@ class DatabaseManager:
         """Updates a specific guild setting column dynamically."""
         allowed_keys = {
             "prefix", "cbc", "log_channel", "llm_primary", "llm_backup1", 
-            "llm_backup2", "llm_backup3", "llm_timeout", "show_model", "reply_ping"
+            "llm_backup2", "llm_backup3", "llm_timeout", "show_model", "reply_ping",
+            "is_premium", "custom_prompt", "byok_gemini_key", "byok_xai_key", 
+            "byok_openai_key", "byok_anthropic_key",
+            "footer_show_icon", "footer_show_name", "footer_show_tokens", "footer_show_latency"
         }
         if key not in allowed_keys:
             raise ValueError(f"Invalid guild setting key: {key}")
