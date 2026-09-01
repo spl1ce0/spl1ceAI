@@ -4,8 +4,8 @@ from discord import ui
 import typing
 import logging
 from cogs.utils.constants import Emojis, DefaultSettings
-from cogs.billing.service import LemonSqueezyService
-from cogs.billing.webhook import LemonSqueezyWebhookServer
+from cogs.billing.service import PolarBillingService
+from cogs.billing.webhook import PolarWebhookServer
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ class PremiumContainer(ui.Container):
             nav_row.add_item(action_btn)
         elif self.page_idx == 1:
             if not self.is_premium:
-                final_checkout = self.checkout_url or f"https://spl1ceai.lemonsqueezy.com/buy/2069890?checkout[custom][guild_id]={self.guild.id}&checkout[custom][user_id]={self.user.id}"
+                final_checkout = self.checkout_url or "https://polar.sh"
                 upgrade_btn = ui.Button(
                     label="👑 Upgrade",
                     url=final_checkout,
@@ -197,7 +197,7 @@ class PremiumContainer(ui.Container):
                 nav_row.add_item(upgrade_btn)
             elif self.portal_url:
                 portal_btn = ui.Button(
-                    label="Manage Subscription",
+                    label="Manage Billing",
                     url=self.portal_url,
                     style=discord.ButtonStyle.link
                 )
@@ -237,8 +237,10 @@ class PremiumContainer(ui.Container):
 
 
 class PremiumView(ui.LayoutView):
-    def __init__(self, bot, guild, user, billing_service: LemonSqueezyService, checkout_url=None, portal_url=None, initial_page: int = 1, timeout=300):
-        super().__init__(timeout=timeout)
+    """View handling the 3-page comparative plan carousel."""
+
+    def __init__(self, bot, guild: discord.Guild, user: typing.Union[discord.User, discord.Member], billing_service: PolarBillingService, checkout_url: typing.Optional[str] = None, portal_url: typing.Optional[str] = None, initial_page: int = 1):
+        super().__init__(timeout=180.0)
         self.bot = bot
         self.guild = guild
         self.user = user
@@ -250,18 +252,14 @@ class PremiumView(ui.LayoutView):
 
     def switch_page(self, page_idx: int):
         self.page_idx = max(0, min(2, page_idx))
+        self.clear_items()
+        is_premium = self.bot.settings_cache.get(self.guild.id, {}).get("is_premium", 0) == 1
         guild_settings = self.bot.settings_cache.get(self.guild.id, {})
-        is_premium = bool(guild_settings.get("is_premium", 0))
-        has_byok = bool(
-            guild_settings.get("byok_gemini_key") or 
-            guild_settings.get("byok_xai_key") or 
-            guild_settings.get("byok_openai_key") or 
-            guild_settings.get("byok_anthropic_key") or
-            guild_settings.get("byok_deepseek_key") or
-            guild_settings.get("byok_glm_key")
+        has_byok = any(
+            guild_settings.get(k)
+            for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"]
         )
 
-        self.clear_items()
         container = PremiumContainer(
             self.bot,
             self.guild,
@@ -277,17 +275,21 @@ class PremiumView(ui.LayoutView):
 
 
 class Billing(commands.Cog):
-    """Manages Lemon Squeezy subscriptions, checkout links, customer portals, and premium upgrades."""
+    """Manages Polar.sh subscriptions, checkout links, customer portals, and premium upgrades."""
 
     def __init__(self, bot):
         self.bot = bot
-        self.billing_service = LemonSqueezyService()
+        self.billing_service = PolarBillingService()
         port = int(DefaultSettings.STRIPE_WEBHOOK_PORT)
-        self.webhook_server = LemonSqueezyWebhookServer(bot, self.billing_service, port=port)
+        self.webhook_server = PolarWebhookServer(bot, self.billing_service, port=port)
 
     async def cog_load(self):
-        """Starts the webhook server when the cog loads."""
+        """Starts the webhook server and syncs active subscriptions when the cog loads."""
         await self.webhook_server.start()
+        try:
+            await self.billing_service.sync_active_subscriptions(self.bot)
+        except Exception as e:
+            logger.warning(f"Initial Polar subscription sync failed: {e}")
 
     async def cog_unload(self):
         """Stops the webhook server cleanly on cog unload."""
@@ -296,7 +298,7 @@ class Billing(commands.Cog):
     @commands.hybrid_command(name="premium", aliases=["subscribe", "plan", "upgrade"])
     @commands.guild_only()
     async def premium(self, ctx: commands.Context):
-        """Displays server premium status and provides a direct Lemon Squeezy checkout link."""
+        """Displays server premium status and provides a direct Polar.sh checkout link."""
         await ctx.defer(ephemeral=True)
 
         checkout_url = None
@@ -304,6 +306,9 @@ class Billing(commands.Cog):
 
         if self.billing_service.is_configured:
             try:
+                # Sync subscriptions directly from Polar API as a fail-safe
+                await self.billing_service.sync_active_subscriptions(self.bot)
+
                 checkout_url = await self.billing_service.create_checkout_session(
                     guild_id=ctx.guild.id,
                     user_id=ctx.author.id,
@@ -315,7 +320,7 @@ class Billing(commands.Cog):
                 if sub and sub.get("customer_id"):
                     portal_url = self.billing_service.get_customer_portal_url(sub["customer_id"])
             except Exception as e:
-                logger.error(f"Error preparing Lemon Squeezy links for /premium: {e}")
+                logger.error(f"Error preparing Polar.sh links for /premium: {e}")
 
         view = PremiumView(
             self.bot,

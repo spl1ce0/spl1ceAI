@@ -351,6 +351,22 @@ class DatabaseManager:
                 await self.db.commit()
 
         async with self.db.cursor() as cursor:
+            await cursor.execute("PRAGMA table_info(guild_subscriptions)")
+            sub_cols = [row[1] for row in await cursor.fetchall()]
+            if sub_cols:
+                sub_migrated = False
+                if "variant_id" not in sub_cols:
+                    logger.info("Migration: Adding variant_id column to guild_subscriptions")
+                    await cursor.execute("ALTER TABLE guild_subscriptions ADD COLUMN variant_id TEXT")
+                    sub_migrated = True
+                if "price_id" not in sub_cols:
+                    logger.info("Migration: Adding price_id column to guild_subscriptions")
+                    await cursor.execute("ALTER TABLE guild_subscriptions ADD COLUMN price_id TEXT")
+                    sub_migrated = True
+                if sub_migrated:
+                    await self.db.commit()
+
+        async with self.db.cursor() as cursor:
             await cursor.execute("PRAGMA table_info(command_telemetry)")
             ct_cols = [row[1] for row in await cursor.fetchall()]
             if ct_cols:

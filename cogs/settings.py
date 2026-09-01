@@ -345,6 +345,24 @@ class GeneralSettingsContainer(ui.Container):
         await interaction.response.send_modal(PrefixModal(prefix, self.guild.id, self.parent_view))
 
 
+def get_model_emoji(model_id: str) -> str:
+    """Helper to return provider emoji for a given model ID."""
+    m = (model_id or "").lower()
+    if "gemini" in m or "google" in m:
+        return Emojis.GEMINI
+    elif "gpt" in m or "openai" in m or "chatgpt" in m:
+        return Emojis.CHATGPT
+    elif "claude" in m or "anthropic" in m:
+        return Emojis.CLAUDE
+    elif "grok" in m or "xai" in m:
+        return Emojis.GROK
+    elif "deepseek" in m:
+        return Emojis.DEEPSEEK
+    elif "glm" in m or "zhipu" in m:
+        return "🇨🇳"
+    return "🤖"
+
+
 class AISettingsContainer(ui.Container):
     def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view, cbc_page: int = 0):
         super().__init__()
@@ -364,10 +382,9 @@ class AISettingsContainer(ui.Container):
         # 1. ChatBot Channel
         cbc = self.guild_settings.get("cbc")
         cbc_state = "off" if cbc is None else "on"
-        channel_name = f"#{self.guild.get_channel(cbc).name}" if (cbc and self.guild.get_channel(cbc)) else "`disabled`"
 
         cbc_display = ui.TextDisplay(
-            f"**Chat Bot Channel:** {channel_name}\n"
+            f"**Chat Bot Channel**\n"
             f"-# Responds automatically to messages in this channel."
         )
         cbc_button = ui.Button(emoji=Emojis.ON if cbc_state == "on" else Emojis.OFF, style=discord.ButtonStyle.gray)
@@ -383,8 +400,6 @@ class AISettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # 2. Custom Persona / Prompt
-        custom_prompt = self.guild_settings.get("custom_prompt")
-        is_premium = bool(self.guild_settings.get("is_premium", 0))
         has_byok = bool(
             self.guild_settings.get("byok_gemini_key") or 
             self.guild_settings.get("byok_xai_key") or 
@@ -394,17 +409,9 @@ class AISettingsContainer(ui.Container):
             self.guild_settings.get("byok_glm_key")
         )
 
-        if custom_prompt:
-            prompt_preview = custom_prompt[:60] + "..." if len(custom_prompt) > 60 else custom_prompt
-            prompt_desc = f"Active: `{prompt_preview}`"
-        elif is_premium or has_byok:
-            prompt_desc = "Default persona (Click to customize)."
-        else:
-            prompt_desc = "Default persona (Requires Premium or BYOK)."
-
         prompt_display = ui.TextDisplay(
             f"**Custom Persona / Prompt**\n"
-            f"-# {prompt_desc}"
+            f"-# Set a custom system instruction or personality for the AI."
         )
         prompt_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         prompt_button.callback = self.custom_prompt_configure
@@ -412,18 +419,9 @@ class AISettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # 3. BYOK API Keys
-        byok_linked = []
-        if self.guild_settings.get("byok_gemini_key"): byok_linked.append("Gemini")
-        if self.guild_settings.get("byok_xai_key"): byok_linked.append("xAI")
-        if self.guild_settings.get("byok_openai_key"): byok_linked.append("OpenAI")
-        if self.guild_settings.get("byok_anthropic_key"): byok_linked.append("Anthropic")
-        if self.guild_settings.get("byok_deepseek_key"): byok_linked.append("DeepSeek")
-        if self.guild_settings.get("byok_glm_key"): byok_linked.append("GLM")
-
-        byok_desc = f"Active: {', '.join(byok_linked)} (Unmetered)" if byok_linked else "Managed Pool (Click to link keys)"
         byok_display = ui.TextDisplay(
             f"**BYOK API Keys**\n"
-            f"-# {byok_desc}"
+            f"-# Link your own API keys for unmetered model usage."
         )
         byok_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         byok_button.callback = self.byok_configure
@@ -434,10 +432,12 @@ class AISettingsContainer(ui.Container):
         if has_byok:
             primary_m = self.guild_settings.get("byok_primary_model", "gemini-3.7-flash")
             fallback_m = self.guild_settings.get("byok_fallback_model", "gemini-3.6-flash")
-            pipe_desc = f"🥇 `{primary_m}`  •  🥈 `{fallback_m}`"
+            p_emoji = get_model_emoji(primary_m)
+            f_emoji = get_model_emoji(fallback_m)
+
             pipeline_display = ui.TextDisplay(
-                f"**BYOK Model Pipeline**\n"
-                f"-# {pipe_desc}"
+                f"**BYOK Model Pipeline:** {p_emoji}  {f_emoji}\n"
+                f"-# Configure your custom primary and fallback failover pipeline."
             )
             pipeline_button = ui.Button(emoji=Emojis.ARROW, style=discord.ButtonStyle.gray)
             pipeline_button.callback = self.byok_pipeline_submenu_open
@@ -445,21 +445,9 @@ class AISettingsContainer(ui.Container):
             self.add_item(ui.Separator())
 
         # 4. AI Response Footer (Submenu)
-        footer_icon = self.guild_settings.get("footer_show_icon", 1)
-        footer_name = self.guild_settings.get("footer_show_name", 1)
-        footer_tokens = self.guild_settings.get("footer_show_tokens", 1)
-        footer_latency = self.guild_settings.get("footer_show_latency", 1)
-
-        active_items = []
-        if footer_icon: active_items.append("Icon")
-        if footer_name: active_items.append("Name")
-        if footer_latency: active_items.append("Latency")
-        if footer_tokens: active_items.append("Tokens")
-
-        desc = f"Active: {', '.join(active_items)}" if active_items else "Disabled (All hidden)"
         footer_display = ui.TextDisplay(
             f"**AI Reply Footer**\n"
-            f"-# {desc}"
+            f"-# Customize the metadata displayed in AI response footers."
         )
         footer_button = ui.Button(emoji=Emojis.ARROW, style=discord.ButtonStyle.gray)
         footer_button.callback = self.footer_submenu_open
@@ -775,7 +763,7 @@ class BYOKPipelineSettingsContainer(ui.Container):
             custom_id="byok_primary_select"
         )
         primary_select.callback = self._on_select_primary
-        self.add_item(ui.TextDisplay(f"**🥇 Primary Model (Tier 1):** `{available_models.get(current_primary, (current_primary,))[0]}`"))
+        self.add_item(ui.TextDisplay(f"**Primary Model (Tier 1):** `{available_models.get(current_primary, (current_primary,))[0]}`"))
         self.add_item(ui.ActionRow(primary_select))
         self.add_item(ui.Separator())
 
@@ -797,7 +785,7 @@ class BYOKPipelineSettingsContainer(ui.Container):
             custom_id="byok_fallback_select"
         )
         fallback_select.callback = self._on_select_fallback
-        self.add_item(ui.TextDisplay(f"**🥈 Fallback Model (Tier 2):** `{available_models.get(current_fallback, (current_fallback,))[0]}`"))
+        self.add_item(ui.TextDisplay(f"**Fallback Model (Tier 2):** `{available_models.get(current_fallback, (current_fallback,))[0]}`"))
         self.add_item(ui.ActionRow(fallback_select))
 
     async def _on_back(self, interaction: discord.Interaction):
@@ -859,11 +847,11 @@ class PlanSettingsContainer(ui.Container):
             content = (
                 f"## Free Plan{curr_tag}\n"
                 f"**0.00€ / month**\n\n"
-                f"✅ 100k tokens per week\n"
-                f"✅ 5–10 message context\n"
-                f"✅ 2 image generations per month\n"
-                f"✅ Web search & basic tools\n"
-                f"❌ Image vision & attachment support\n"
+                f"✅ 100k tokens/week\n"
+                f"✅ 5–10 message context window\n"
+                f"✅ 2 image gens/month\n"
+                f"✅ Websearch\n"
+                f"❌ Vision\n"
                 f"❌ Custom system instructions"
             )
         elif self.page_idx == 1:
@@ -872,12 +860,12 @@ class PlanSettingsContainer(ui.Container):
             content = (
                 f"## Premium Plan{curr_tag}\n"
                 f"**2.99€ / month**\n\n"
-                f"✅ 500k tokens per week\n"
-                f"✅ 30 message context\n"
-                f"✅ 20 image generations per month\n"
-                f"✅ Image attachments vision support\n"
-                f"✅ Custom system instructions\n"
-                f"✅ Priority Gemini 3.7 Flash + Grok fallback"
+                f"✅ 500k tokens/week\n"
+                f"✅ 30 message context window\n"
+                f"✅ 20 image gens/month\n"
+                f"✅ Websearch\n"
+                f"✅ Vision\n"
+                f"✅ Custom system instructions"
             )
         else:
             # --- PAGE 3: BYOK ---
@@ -885,12 +873,13 @@ class PlanSettingsContainer(ui.Container):
             content = (
                 f"## Bring Your Own Key{curr_tag}\n"
                 f"**0.00€ / month**\n\n"
-                f"✅ No limits\n"
-                f"✅ Gemini, xAI, ChatGPT & Claude API support\n"
-                f"✅ 30 message context\n"
-                f"✅ Infinite image generation\n"
+                f"✅ ∞ tokens/week\n"
+                f"✅ 30 message context window\n"
+                f"✅ ∞ image gens/week\n"
+                f"✅ Websearch\n"
+                f"✅ Vision\n"
                 f"✅ Custom system instructions\n"
-                f"✅ Your own settings"
+                f"✅ Customizable settings"
             )
 
         self.add_item(ui.TextDisplay(content))
@@ -921,7 +910,7 @@ class PlanSettingsContainer(ui.Container):
             nav_row.add_item(action_btn)
         elif self.page_idx == 1:
             if not self.is_premium:
-                final_checkout = self.checkout_url or f"https://spl1ceai.lemonsqueezy.com/buy/2069890?checkout[custom][guild_id]={self.guild.id}"
+                final_checkout = self.checkout_url or "https://polar.sh"
                 upgrade_btn = ui.Button(
                     label="👑 Upgrade",
                     url=final_checkout,
@@ -929,9 +918,9 @@ class PlanSettingsContainer(ui.Container):
                 )
                 nav_row.add_item(upgrade_btn)
             else:
-                final_portal = self.portal_url or "https://spl1ceai.lemonsqueezy.com/billing"
+                final_portal = self.portal_url or "https://polar.sh/purchases/subscriptions"
                 portal_btn = ui.Button(
-                    label="Manage Subscription",
+                    label="Manage Billing",
                     url=final_portal,
                     style=discord.ButtonStyle.link
                 )
@@ -1062,15 +1051,20 @@ class SettingsView(ui.LayoutView):
                     sub = await self.bot.db_manager.get_subscription(self.guild.id)
                     if sub and sub.get("customer_id"):
                         self.plan_portal_url = billing_cog.billing_service.get_customer_portal_url(sub["customer_id"])
+                    else:
+                        self.plan_portal_url = "https://polar.sh/purchases/subscriptions"
                 except Exception as e:
                     logger.error(f"Error getting billing links in settings: {e}")
+                    self.plan_portal_url = "https://polar.sh/purchases/subscriptions"
 
         is_premium = bool(self.guild_settings.get("is_premium", 0))
         has_byok = bool(
             self.guild_settings.get("byok_gemini_key") or 
             self.guild_settings.get("byok_xai_key") or 
             self.guild_settings.get("byok_openai_key") or 
-            self.guild_settings.get("byok_anthropic_key")
+            self.guild_settings.get("byok_anthropic_key") or
+            self.guild_settings.get("byok_deepseek_key") or
+            self.guild_settings.get("byok_glm_key")
         )
 
         self.clear_items()
