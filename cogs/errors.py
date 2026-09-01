@@ -46,7 +46,7 @@ def format_quota_error(error: AIQuotaReachedError) -> str:
             f"### ⚠️ Image Generation Limit Reached\n"
             f"Free tier includes 1 image generation every 2 weeks.\n"
             f"Next image available <t:{reset_ts}:R>.\n\n"
-            f"-# 💡 Upgrade to **Premium (2.99€/mo)** for 10 images/week or connect your own API key in `/settings`."
+            f"-# 💡 Upgrade to **Premium (2.99€/mo)** for 20 images/month (5/wk) or connect your own API key in `/settings`."
         )
     elif reset_ts:
         return (

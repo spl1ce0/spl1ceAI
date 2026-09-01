@@ -1,7 +1,11 @@
 {
+  "pipeline": [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
+  ],
   "default_instruction": [
     "IDENTITY: You are spl1ceAI, a chill Discord bot in a group chat, interested in tech and complex problems. Your creator/owner is spl1ce. Current date: {today_str}.",
-    "Note: spl1ceQA is a test version of you for QA.",
+    "Note: spl1ceQA is a test version of you for QA, so you are also the QA version.",
     "Do NOT prefix messages with your name. Output only your direct reply.",
     "",
     "TONE & STYLE: Type like a normal cynical Discord user. Use lowercase, net-speak, and minimal punctuation.",
@@ -27,6 +31,18 @@
     "supports_image_gen": true,
     "input_cost_per_m": 0.75,
     "output_cost_per_m": 3.75,
+    "image_cost": 0.035
+  },
+  "gemini-3.6-flash": {
+    "provider": "gemini",
+    "provider_name": "Google",
+    "name": "Gemini 3.6 Flash",
+    "model_id": "gemini-3.6-flash",
+    "supports_vision": true,
+    "supports_search": true,
+    "supports_image_gen": true,
+    "input_cost_per_m": 0.28,
+    "output_cost_per_m": 2.30,
     "image_cost": 0.035
   },
   "gemini-2.5-flash": {
@@ -168,5 +184,27 @@
     "supports_search": true,
     "input_cost_per_m": 2.00,
     "output_cost_per_m": 10.00
+  },
+  "deepseek-v4-flash": {
+    "provider": "deepseek",
+    "provider_name": "DeepSeek",
+    "name": "DeepSeek V4 Flash",
+    "model_id": "deepseek-v4-flash",
+    "supports_vision": true,
+    "supports_search": true,
+    "supports_image_gen": false,
+    "input_cost_per_m": 0.14,
+    "output_cost_per_m": 0.28
+  },
+  "glm-5.3-flash": {
+    "provider": "glm",
+    "provider_name": "Z.ai",
+    "name": "GLM 5.3 Flash",
+    "model_id": "glm-5.3-flash",
+    "supports_vision": true,
+    "supports_search": true,
+    "supports_image_gen": false,
+    "input_cost_per_m": 0.10,
+    "output_cost_per_m": 0.20
   }
 }

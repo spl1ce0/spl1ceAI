@@ -499,7 +499,7 @@ class Dev(cmds.Cog):
         val = 1 if status else 0
         await self.bot.db_manager.update_guild_setting(target_guild.id, "is_premium", val)
         self.bot.settings_cache.setdefault(target_guild.id, {})["is_premium"] = val
-        state_str = "👑 **Premium Plan** (500k tokens/wk, 30 msgs context, vision, 10 images/wk)" if status else "🆓 **Free Snapshot Plan**"
+        state_str = "👑 **Premium Plan** (500k tokens/wk, 30 msgs context, vision, 5 images/wk [20/mo])" if status else "🆓 **Free Snapshot Plan**"
         await ctx.reply(f"✅ Updated **{target_guild.name}** (`{target_guild.id}`) to {state_str}.")
 
     @cmds.hybrid_command(name="inspect", aliases=["audituser", "userlookup", "whois", "userdossier"])

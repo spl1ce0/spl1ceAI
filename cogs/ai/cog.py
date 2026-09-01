@@ -41,7 +41,9 @@ class QuotaContainer(ui.Container):
             self.guild_settings.get("byok_gemini_key") or 
             self.guild_settings.get("byok_xai_key") or 
             self.guild_settings.get("byok_openai_key") or 
-            self.guild_settings.get("byok_anthropic_key")
+            self.guild_settings.get("byok_anthropic_key") or
+            self.guild_settings.get("byok_deepseek_key") or
+            self.guild_settings.get("byok_glm_key")
         )
 
         if has_byok:
@@ -95,12 +97,12 @@ class QuotaContainer(ui.Container):
                 f"-# Unmetered via custom API keys"
             )
         elif is_premium:
-            pct_img = min(100.0, (img_count / 10.0) * 100.0)
+            pct_img = min(100.0, (img_count / 5.0) * 100.0)
             filled_img = min(16, max(0, int(round((pct_img / 100.0) * 16))))
             bar_img = "█" * filled_img + "░" * (16 - filled_img)
             img_block = (
                 f"{bar_img}\n"
-                f"{img_count} / 10 images used ({pct_img:.0f}%)\n"
+                f"{img_count} / 5 images used ({pct_img:.0f}%)\n"
                 f"-# Resets <t:{reset_ts}:R>"
             )
         else:
@@ -415,9 +417,10 @@ class AI(commands.Cog):
         contents = await ContextManager.prepare_contents(
             msg,
             message_list,
-            f"Reply to the user's question: {question}",
+            f"Reply to the user's question from {ctx.author.display_name}: {question}",
             slash_attachments=slash_attachments,
-            enable_vision=enable_vision
+            enable_vision=enable_vision,
+            bot_user=self.bot.user
         )
 
         logger.info(f"ask command trigger: contents contains {len(contents)} items (vision={enable_vision}, history={len(message_list)})")
@@ -587,7 +590,7 @@ class AI(commands.Cog):
                 message_list.reverse()
                 
                 prompt = f"Reply to this message from {message.author.display_name}: {message.content}"
-                contents = await ContextManager.prepare_contents(message, message_list, prompt, enable_vision=enable_vision)
+                contents = await ContextManager.prepare_contents(message, message_list, prompt, enable_vision=enable_vision, bot_user=self.bot.user)
 
                 logger.info(f"on_message trigger: contents contains {len(contents)} items (vision={enable_vision}, history={len(message_list)})")
 

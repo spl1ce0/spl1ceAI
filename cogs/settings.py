@@ -62,7 +62,7 @@ class CustomPromptModal(ui.Modal, title="Custom Persona / Prompt"):
         guild_settings = self.parent_view.bot.settings_cache.get(self.guild_id, {})
         is_paid_or_byok = bool(
             guild_settings.get("is_premium") or 
-            any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key"])
+            any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"])
         )
         if new_prompt and not is_paid_or_byok:
             await interaction.response.send_message(
@@ -107,6 +107,12 @@ class BYOKModal(ui.Modal, title="Link Custom API Keys"):
         required=False,
         max_length=200
     )
+    deepseek_key = ui.TextInput(
+        label="DeepSeek Key",
+        placeholder="DeepSeek API key (or leave blank)",
+        required=False,
+        max_length=200
+    )
 
     def __init__(self, guild_settings: dict, guild_id: int, parent_view):
         super().__init__()
@@ -120,18 +126,22 @@ class BYOKModal(ui.Modal, title="Link Custom API Keys"):
             self.openai_key.default = guild_settings["byok_openai_key"]
         if guild_settings.get("byok_anthropic_key"):
             self.anthropic_key.default = guild_settings["byok_anthropic_key"]
+        if guild_settings.get("byok_deepseek_key"):
+            self.deepseek_key.default = guild_settings["byok_deepseek_key"]
 
     async def on_submit(self, interaction: discord.Interaction):
         g_key = self.gemini_key.value.strip() if self.gemini_key.value else None
         x_key = self.xai_key.value.strip() if self.xai_key.value else None
         o_key = self.openai_key.value.strip() if self.openai_key.value else None
         a_key = self.anthropic_key.value.strip() if self.anthropic_key.value else None
+        d_key = self.deepseek_key.value.strip() if self.deepseek_key.value else None
 
         key_updates = [
             ("byok_gemini_key", g_key),
             ("byok_xai_key", x_key),
             ("byok_openai_key", o_key),
-            ("byok_anthropic_key", a_key)
+            ("byok_anthropic_key", a_key),
+            ("byok_deepseek_key", d_key)
         ]
 
         for col, val in key_updates:
@@ -140,9 +150,16 @@ class BYOKModal(ui.Modal, title="Link Custom API Keys"):
             await self.parent_view.bot.db_manager.log_settings_change(self.guild_id, interaction.user.id, col, str(old_val), str(val))
             self.parent_view.bot.settings_cache.setdefault(self.guild_id, {})[col] = val
             self.parent_view.guild_settings[col] = val
-
-        self.parent_view.render_ai()
-        await interaction.response.edit_message(view=self.parent_view)
+        if hasattr(self.parent_view, "render_plan") and getattr(self.parent_view, "plan_page_idx", None) is not None and getattr(self.parent_view, "plan_page_idx", None) == 2:
+            await self.parent_view.render_plan(interaction, page_idx=2)
+        elif hasattr(self.parent_view, "render_ai"):
+            self.parent_view.render_ai()
+            await interaction.response.edit_message(view=self.parent_view)
+        elif hasattr(self.parent_view, "switch_page"):
+            self.parent_view.switch_page(2)
+            await interaction.response.edit_message(view=self.parent_view)
+        else:
+            await interaction.response.defer()
 
 
 # =========================================================================
@@ -372,7 +389,9 @@ class AISettingsContainer(ui.Container):
             self.guild_settings.get("byok_gemini_key") or 
             self.guild_settings.get("byok_xai_key") or 
             self.guild_settings.get("byok_openai_key") or 
-            self.guild_settings.get("byok_anthropic_key")
+            self.guild_settings.get("byok_anthropic_key") or
+            self.guild_settings.get("byok_deepseek_key") or
+            self.guild_settings.get("byok_glm_key")
         )
 
         if custom_prompt:
@@ -398,6 +417,8 @@ class AISettingsContainer(ui.Container):
         if self.guild_settings.get("byok_xai_key"): byok_linked.append("xAI")
         if self.guild_settings.get("byok_openai_key"): byok_linked.append("OpenAI")
         if self.guild_settings.get("byok_anthropic_key"): byok_linked.append("Anthropic")
+        if self.guild_settings.get("byok_deepseek_key"): byok_linked.append("DeepSeek")
+        if self.guild_settings.get("byok_glm_key"): byok_linked.append("GLM")
 
         byok_desc = f"Active: {', '.join(byok_linked)} (Unmetered)" if byok_linked else "Managed Pool (Click to link keys)"
         byok_display = ui.TextDisplay(
@@ -408,6 +429,20 @@ class AISettingsContainer(ui.Container):
         byok_button.callback = self.byok_configure
         self.add_item(ui.Section(byok_display, accessory=byok_button))
         self.add_item(ui.Separator())
+
+        # 3.5. BYOK Model Pipeline (Shown only if BYOK keys are linked)
+        if has_byok:
+            primary_m = self.guild_settings.get("byok_primary_model", "gemini-3.7-flash")
+            fallback_m = self.guild_settings.get("byok_fallback_model", "gemini-3.6-flash")
+            pipe_desc = f"🥇 `{primary_m}`  •  🥈 `{fallback_m}`"
+            pipeline_display = ui.TextDisplay(
+                f"**BYOK Model Pipeline**\n"
+                f"-# {pipe_desc}"
+            )
+            pipeline_button = ui.Button(emoji=Emojis.ARROW, style=discord.ButtonStyle.gray)
+            pipeline_button.callback = self.byok_pipeline_submenu_open
+            self.add_item(ui.Section(pipeline_display, accessory=pipeline_button))
+            self.add_item(ui.Separator())
 
         # 4. AI Response Footer (Submenu)
         footer_icon = self.guild_settings.get("footer_show_icon", 1)
@@ -465,6 +500,10 @@ class AISettingsContainer(ui.Container):
 
     async def byok_configure(self, interaction: discord.Interaction):
         await interaction.response.send_modal(BYOKModal(self.guild_settings, self.guild.id, self.parent_view))
+
+    async def byok_pipeline_submenu_open(self, interaction: discord.Interaction):
+        self.parent_view.render_byok_pipeline_settings()
+        await interaction.response.edit_message(view=self.parent_view)
 
     async def footer_submenu_open(self, interaction: discord.Interaction):
         self.parent_view.render_footer_settings()
@@ -648,6 +687,143 @@ class FooterSettingsContainer(ui.Container):
         self.bot.settings_cache.setdefault(self.guild.id, {})[key] = new_val
         self.guild_settings[key] = new_val
         self.parent_view.render_footer_settings()
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class BYOKPipelineSettingsContainer(ui.Container):
+    def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view):
+        super().__init__()
+        self.guild_settings = guild_settings
+        self.guild = guild
+        self.bot = bot
+        self.parent_view = parent_view
+        self._make_container()
+
+    def _get_available_models(self) -> dict:
+        """Returns dict of {model_id: (display_name, provider)} based strictly on configured BYOK keys."""
+        allowed_providers = set()
+        if self.guild_settings.get("byok_gemini_key"): allowed_providers.add("gemini")
+        if self.guild_settings.get("byok_xai_key"): allowed_providers.add("grok")
+        if self.guild_settings.get("byok_openai_key"): allowed_providers.add("openai")
+        if self.guild_settings.get("byok_anthropic_key"): allowed_providers.add("anthropic")
+        if self.guild_settings.get("byok_deepseek_key"): allowed_providers.add("deepseek")
+        if self.guild_settings.get("byok_glm_key"): allowed_providers.add("glm")
+
+        models_data = {}
+        ai_cog = self.bot.get_cog("AI")
+        if ai_cog and hasattr(ai_cog, "model_manager") and ai_cog.model_manager.models:
+            for mid, m in ai_cog.model_manager.models.items():
+                if m.provider in allowed_providers:
+                    models_data[mid] = (m.display_name, m.provider)
+        else:
+            import json, os
+            cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai", "models.json")
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for mid, m in data.items():
+                        if mid in ["default_instruction", "pipeline"]: continue
+                        if m.get("provider") in allowed_providers:
+                            models_data[mid] = (m.get("name", mid), m.get("provider"))
+
+        return models_data
+
+    def _make_container(self):
+        # 1. Header with < Back button
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back
+        header_section = ui.Section(
+            ui.TextDisplay("## BYOK Model Pipeline\n-# Configure your custom 2-tier failover pipeline from your linked providers."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        available_models = self._get_available_models()
+        if not available_models:
+            no_keys_disp = ui.TextDisplay(
+                "**No Models Available**\n"
+                "-# You must first link at least one provider API key in the BYOK settings."
+            )
+            self.add_item(no_keys_disp)
+            return
+
+        current_primary = self.guild_settings.get("byok_primary_model")
+        current_fallback = self.guild_settings.get("byok_fallback_model")
+
+        first_mid = list(available_models.keys())[0]
+        if current_primary not in available_models:
+            current_primary = first_mid
+        if current_fallback not in available_models:
+            current_fallback = list(available_models.keys())[1] if len(available_models) > 1 else first_mid
+
+        # 1. Primary Model Selector
+        primary_options = []
+        for mid, (name, prov) in available_models.items():
+            primary_options.append(
+                discord.SelectOption(
+                    label=name,
+                    value=mid,
+                    description=f"Provider: {prov.title()}",
+                    default=(mid == current_primary)
+                )
+            )
+
+        primary_select = discord.ui.Select(
+            placeholder="Select Primary Model (Tier 1)...",
+            options=primary_options[:25],
+            custom_id="byok_primary_select"
+        )
+        primary_select.callback = self._on_select_primary
+        self.add_item(ui.TextDisplay(f"**🥇 Primary Model (Tier 1):** `{available_models.get(current_primary, (current_primary,))[0]}`"))
+        self.add_item(ui.ActionRow(primary_select))
+        self.add_item(ui.Separator())
+
+        # 2. Fallback Model Selector
+        fallback_options = []
+        for mid, (name, prov) in available_models.items():
+            fallback_options.append(
+                discord.SelectOption(
+                    label=name,
+                    value=mid,
+                    description=f"Provider: {prov.title()}",
+                    default=(mid == current_fallback)
+                )
+            )
+
+        fallback_select = discord.ui.Select(
+            placeholder="Select Fallback Model (Tier 2)...",
+            options=fallback_options[:25],
+            custom_id="byok_fallback_select"
+        )
+        fallback_select.callback = self._on_select_fallback
+        self.add_item(ui.TextDisplay(f"**🥈 Fallback Model (Tier 2):** `{available_models.get(current_fallback, (current_fallback,))[0]}`"))
+        self.add_item(ui.ActionRow(fallback_select))
+
+    async def _on_back(self, interaction: discord.Interaction):
+        self.parent_view.render_ai()
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_select_primary(self, interaction: discord.Interaction):
+        new_val = interaction.data["values"][0]
+        old_val = self.guild_settings.get("byok_primary_model")
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "byok_primary_model", new_val)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "byok_primary_model", str(old_val), str(new_val))
+        self.bot.settings_cache.setdefault(self.guild.id, {})["byok_primary_model"] = new_val
+        self.guild_settings["byok_primary_model"] = new_val
+
+        self.parent_view.render_byok_pipeline_settings()
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_select_fallback(self, interaction: discord.Interaction):
+        new_val = interaction.data["values"][0]
+        old_val = self.guild_settings.get("byok_fallback_model")
+        await self.bot.db_manager.update_guild_setting(self.guild.id, "byok_fallback_model", new_val)
+        await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "byok_fallback_model", str(old_val), str(new_val))
+        self.bot.settings_cache.setdefault(self.guild.id, {})["byok_fallback_model"] = new_val
+        self.guild_settings["byok_fallback_model"] = new_val
+
+        self.parent_view.render_byok_pipeline_settings()
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -859,6 +1035,11 @@ class SettingsView(ui.LayoutView):
         container = FooterSettingsContainer(self.guild_settings, self.guild, self.bot, self)
         self.add_item(container)
 
+    def render_byok_pipeline_settings(self):
+        self.clear_items()
+        container = BYOKPipelineSettingsContainer(self.guild_settings, self.guild, self.bot, self)
+        self.add_item(container)
+
     def render_logs(self, log_page: int = 0):
         self.clear_items()
         container = LogsSettingsContainer(self.guild_settings, self.guild, self.bot, self, log_page=log_page)
@@ -938,6 +1119,10 @@ class Settings(commands.Cog):
                 "byok_xai_key": DefaultSettings.BYOK_XAI_KEY,
                 "byok_openai_key": DefaultSettings.BYOK_OPENAI_KEY,
                 "byok_anthropic_key": DefaultSettings.BYOK_ANTHROPIC_KEY,
+                "byok_deepseek_key": DefaultSettings.BYOK_DEEPSEEK_KEY,
+                "byok_glm_key": DefaultSettings.BYOK_GLM_KEY,
+                "byok_primary_model": DefaultSettings.BYOK_PRIMARY_MODEL,
+                "byok_fallback_model": DefaultSettings.BYOK_FALLBACK_MODEL,
                 "footer_show_icon": DefaultSettings.FOOTER_SHOW_ICON,
                 "footer_show_name": DefaultSettings.FOOTER_SHOW_NAME,
                 "footer_show_tokens": DefaultSettings.FOOTER_SHOW_TOKENS,

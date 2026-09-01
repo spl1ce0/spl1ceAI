@@ -314,6 +314,22 @@ class DatabaseManager:
                 logger.info("Migration: Adding byok_anthropic_key column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_anthropic_key TEXT")
                 migrated = True
+            if "byok_deepseek_key" not in columns:
+                logger.info("Migration: Adding byok_deepseek_key column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_deepseek_key TEXT")
+                migrated = True
+            if "byok_glm_key" not in columns:
+                logger.info("Migration: Adding byok_glm_key column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_glm_key TEXT")
+                migrated = True
+            if "byok_primary_model" not in columns:
+                logger.info("Migration: Adding byok_primary_model column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_primary_model TEXT")
+                migrated = True
+            if "byok_fallback_model" not in columns:
+                logger.info("Migration: Adding byok_fallback_model column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_fallback_model TEXT")
+                migrated = True
             if "footer_show_icon" not in columns:
                 logger.info("Migration: Adding footer_show_icon column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_icon INTEGER NOT NULL DEFAULT 1")
@@ -426,7 +442,8 @@ class DatabaseManager:
             "prefix", "cbc", "log_channel", "llm_primary", "llm_backup1", 
             "llm_backup2", "llm_backup3", "llm_timeout", "show_model", "reply_ping",
             "is_premium", "custom_prompt", "byok_gemini_key", "byok_xai_key", 
-            "byok_openai_key", "byok_anthropic_key",
+            "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key",
+            "byok_primary_model", "byok_fallback_model",
             "footer_show_icon", "footer_show_name", "footer_show_tokens", "footer_show_latency"
         }
         if key not in allowed_keys:
@@ -603,8 +620,8 @@ class DatabaseManager:
         
         if is_image:
             if is_premium:
-                if usage["image_count"] >= 10:
-                    return False, f"Server has reached the Premium weekly limit of 10 image generations. Resets <t:{usage['next_reset_ts']}:R>.", usage
+                if usage["image_count"] >= 5:
+                    return False, f"Server has reached the Premium weekly limit of 5 image generations (20/month). Resets <t:{usage['next_reset_ts']}:R>.", usage
             else:
                 last_img = float(usage.get("last_image_ts", 0.0) or 0.0)
                 if last_img > 0:

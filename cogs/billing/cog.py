@@ -35,6 +35,12 @@ class BYOKModal(ui.Modal, title="Link Custom API Keys"):
         required=False,
         max_length=200
     )
+    deepseek_key = ui.TextInput(
+        label="DeepSeek Key",
+        placeholder="DeepSeek API key (or leave blank)",
+        required=False,
+        max_length=200
+    )
 
     def __init__(self, guild_settings: dict, guild_id: int, parent_view):
         super().__init__()
@@ -49,18 +55,22 @@ class BYOKModal(ui.Modal, title="Link Custom API Keys"):
             self.openai_key.default = guild_settings["byok_openai_key"]
         if guild_settings.get("byok_anthropic_key"):
             self.anthropic_key.default = guild_settings["byok_anthropic_key"]
+        if guild_settings.get("byok_deepseek_key"):
+            self.deepseek_key.default = guild_settings["byok_deepseek_key"]
 
     async def on_submit(self, interaction: discord.Interaction):
         g_key = self.gemini_key.value.strip() if self.gemini_key.value else None
         x_key = self.xai_key.value.strip() if self.xai_key.value else None
         o_key = self.openai_key.value.strip() if self.openai_key.value else None
         a_key = self.anthropic_key.value.strip() if self.anthropic_key.value else None
+        d_key = self.deepseek_key.value.strip() if self.deepseek_key.value else None
 
         key_updates = [
             ("byok_gemini_key", g_key),
             ("byok_xai_key", x_key),
             ("byok_openai_key", o_key),
-            ("byok_anthropic_key", a_key)
+            ("byok_anthropic_key", a_key),
+            ("byok_deepseek_key", d_key)
         ]
 
         bot = self.parent_view.bot
@@ -114,11 +124,11 @@ class PremiumContainer(ui.Container):
             content = (
                 f"## Free Plan{curr_tag}\n"
                 f"**0.00€ / month**\n\n"
-                f"✅ 100k tokens per week\n"
-                f"✅ 5–10 message context\n"
-                f"✅ 2 image generations per month\n"
-                f"✅ Web search & basic tools\n"
-                f"❌ Image vision & attachment support\n"
+                f"✅ 100k tokens/week\n"
+                f"✅ 5–10 message context window\n"
+                f"✅ 2 image gens/month\n"
+                f"✅ Websearch\n"
+                f"❌ Vision\n"
                 f"❌ Custom system instructions"
             )
         elif self.page_idx == 1:
@@ -127,12 +137,12 @@ class PremiumContainer(ui.Container):
             content = (
                 f"## Premium Plan{curr_tag}\n"
                 f"**2.99€ / month**\n\n"
-                f"✅ 500k tokens per week\n"
-                f"✅ 30 message context\n"
-                f"✅ 20 image generations per month\n"
-                f"✅ Image attachments vision support\n"
-                f"✅ Custom system instructions\n"
-                f"✅ Priority Gemini 3.7 Flash + Grok fallback"
+                f"✅ 500k tokens/week\n"
+                f"✅ 30 message context window\n"
+                f"✅ 20 image gens/month\n"
+                f"✅ Websearch\n"
+                f"✅ Vision\n"
+                f"✅ Custom system instructions"
             )
         else:
             # --- PAGE 3: BYOK ---
@@ -140,12 +150,13 @@ class PremiumContainer(ui.Container):
             content = (
                 f"## Bring Your Own Key{curr_tag}\n"
                 f"**0.00€ / month**\n\n"
-                f"✅ No limits\n"
-                f"✅ Gemini, xAI, ChatGPT & Claude API support\n"
-                f"✅ 30 message context\n"
-                f"✅ Infinite image generation\n"
+                f"✅ ∞ tokens/week\n"
+                f"✅ 30 message context window\n"
+                f"✅ ∞ image gens/week\n"
+                f"✅ Websearch\n"
+                f"✅ Vision\n"
                 f"✅ Custom system instructions\n"
-                f"✅ Your own settings"
+                f"✅ Customizable settings"
             )
 
         self.add_item(ui.TextDisplay(content))
@@ -184,14 +195,20 @@ class PremiumContainer(ui.Container):
                     style=discord.ButtonStyle.link
                 )
                 nav_row.add_item(upgrade_btn)
-            else:
-                final_portal = self.portal_url or f"https://{self.billing_service.store_slug}.lemonsqueezy.com/billing"
+            elif self.portal_url:
                 portal_btn = ui.Button(
                     label="Manage Subscription",
-                    url=final_portal,
+                    url=self.portal_url,
                     style=discord.ButtonStyle.link
                 )
                 nav_row.add_item(portal_btn)
+            else:
+                active_btn = ui.Button(
+                    label="👑 Premium Active",
+                    style=discord.ButtonStyle.gray,
+                    disabled=True
+                )
+                nav_row.add_item(active_btn)
         else:
             byok_label = "⚙️ Manage Keys" if self.has_byok else "⚙️ Setup Keys"
             byok_btn = ui.Button(
@@ -239,7 +256,9 @@ class PremiumView(ui.LayoutView):
             guild_settings.get("byok_gemini_key") or 
             guild_settings.get("byok_xai_key") or 
             guild_settings.get("byok_openai_key") or 
-            guild_settings.get("byok_anthropic_key")
+            guild_settings.get("byok_anthropic_key") or
+            guild_settings.get("byok_deepseek_key") or
+            guild_settings.get("byok_glm_key")
         )
 
         self.clear_items()

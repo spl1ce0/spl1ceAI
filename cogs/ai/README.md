@@ -12,13 +12,15 @@ This package manages all Large Language Model (LLM) communications, fixed 3-tier
 
 ---
 
-## 🛡️ Fixed 3-Tier Disaster-Resilient Pipeline
+## 🛡️ Dynamic Config-Driven Failover Pipeline
 
-Standard queries are automatically routed through a non-editable 3-tier pipeline designed for maximum speed, conversational nuance, and zero-downtime reliability:
+Standard queries are automatically routed through a 2-tier pipeline defined in `models.json` (`pipeline` list):
 
 1. 🥇 **Primary Brain:** `gemini-3.7-flash` (Google) — Fast, natural human conversation with live Google Search grounding.
-2. 🥈 **Intra-Google Fallback:** `gemini-2.5-flash` (Google) — Instant zero-downtime failover within Google Cloud infra if rate limits occur.
-3. 🥉 **Disaster Recovery:** `grok-4.3` (xAI) — Independent cross-provider failover if entire Google cloud region suffers an outage.
+2. 🥈 **Tier 2 Fallback:** `gemini-3.6-flash` (Google) — High-throughput backup with vision and search.
+
+### 🔑 Custom BYOK 2-Model Pipeline
+Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-model pipeline (Primary & Fallback) in `/settings`. The selection menu dynamically filters and displays only models matching the server's linked API keys (Gemini, xAI Grok, OpenAI, Anthropic, DeepSeek, GLM).
 
 ---
 
@@ -31,7 +33,7 @@ Standard queries are automatically routed through a non-editable 3-tier pipeline
 | **AI Model Brain** | `gemini-3.7-flash` | `gemini-3.7-flash` | Selected / Configured provider |
 | **Context Window** | 5 msgs (`/ask`) • 15 msgs (chat) | 30 msgs everywhere | 30 msgs everywhere |
 | **Vision (Images)** | ❌ Disabled (Text-only) | ✅ Full image attachment analysis | ✅ Full image attachment analysis |
-| **Image Generation** | 1 image every 2 weeks | 10 images / week | Unlimited |
+| **Image Generation** | 1 image every 2 weeks | 5 images / week (20/month) | Unlimited |
 | **Custom Persona** | Default `spl1ceAI` persona | Custom system prompt (via `/settings`) | Custom system prompt (via `/settings`) |
 
 ---

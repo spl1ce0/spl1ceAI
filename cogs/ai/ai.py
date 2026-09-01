@@ -104,13 +104,13 @@ class Model(ABC):
         return round(in_cost + out_cost + img_cost, 6)
 
     @abstractmethod
-    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
         pass
 
 
-    async def query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, image_quota_checker: typing.Optional[typing.Callable] = None) -> AIResponse:
+    async def query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, image_quota_checker: typing.Optional[typing.Callable] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
         # 1. Run provider-specific text query
-        response = await self._execute_query(contents, timeout, custom_prompt=custom_prompt)
+        response = await self._execute_query(contents, timeout, custom_prompt=custom_prompt, custom_key=custom_key)
         response.model_name = self.name
         response.provider = self.provider
         
@@ -144,9 +144,9 @@ class Model(ABC):
                     else:
                         raise AIError(f"Image generation failed for prompt: {image_prompt}")
                     
-        # 3. Calculate estimated cost
-        in_tok = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
-        out_tok = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+        # 3. Calculate and attach cost metadata
+        in_tok = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
+        out_tok = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') and response.usage_metadata else 0
         response.estimated_cost = self.calculate_cost(in_tok, out_tok, has_image=bool(response.image_bytes))
 
         return response
@@ -158,8 +158,13 @@ class Model(ABC):
 
 class GeminiModel(Model):
     
-    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
-        client = self.clients.get("gemini")
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
+        if custom_key:
+            from google import genai
+            client = genai.Client(api_key=custom_key)
+        else:
+            client = self.clients.get("gemini")
+            
         if not client:
             raise AIConfigurationError("Gemini client is not configured/available.")
             
@@ -285,8 +290,13 @@ class OpenAIModel(Model):
         messages.append({"role": "user", "content": openai_contents})
         return messages
 
-    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
-        client = self.clients.get("openai")
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
+        if custom_key:
+            import openai
+            client = openai.AsyncOpenAI(api_key=custom_key)
+        else:
+            client = self.clients.get("openai")
+            
         if not client:
             raise AIConfigurationError("OpenAI client is not configured/available.")
 
@@ -308,13 +318,12 @@ class OpenAIModel(Model):
                 prompt_tokens = response.usage.input_tokens if hasattr(response, 'usage') and response.usage else 0
                 completion_tokens = response.usage.output_tokens if hasattr(response, 'usage') and response.usage else 0
             else:
-                messages = self._convert_prompt(query_contents, is_responses_api=False)
+                messages = self._convert_prompt(query_contents, is_responses_api=False, custom_prompt=custom_prompt)
                 response = await client.chat.completions.create(
                     model=self.model_id,
                     messages=messages,
                     max_completion_tokens=800,
-                    temperature=1.2,
-                    presence_penalty=0.5
+                    temperature=0.6
                 )
                 text = response.choices[0].message.content
                 prompt_tokens = response.usage.prompt_tokens if response.usage else 0
@@ -382,11 +391,11 @@ class OpenAIModel(Model):
 
 class AnthropicModel(Model):
     def _convert_prompt(self, contents: list) -> list:
-        messages = []
         anthropic_contents = []
         for item in contents:
             if isinstance(item, str):
-                anthropic_contents.append({"type": "text", "text": item})
+                if item and item.strip():
+                    anthropic_contents.append({"type": "text", "text": item})
             elif hasattr(item, 'inline_data') and item.inline_data:
                 img_base64 = base64.b64encode(item.inline_data.data).decode('utf-8')
                 mime_type = item.inline_data.mime_type
@@ -409,11 +418,19 @@ class AnthropicModel(Model):
                         "data": img_base64
                     }
                 })
+        messages = []
+        if not anthropic_contents:
+            anthropic_contents.append({"type": "text", "text": "Analyze this."})
         messages.append({"role": "user", "content": anthropic_contents})
         return messages
 
-    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
-        client = self.clients.get("anthropic")
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
+        if custom_key:
+            import anthropic
+            client = anthropic.AsyncAnthropic(api_key=custom_key)
+        else:
+            client = self.clients.get("anthropic")
+            
         if not client:
             raise AIConfigurationError("Anthropic client is not configured/available.")
 
@@ -436,7 +453,7 @@ class AnthropicModel(Model):
                 system=self._get_system_instructions(custom_prompt),
                 messages=messages,
                 max_tokens=800,
-                temperature=1.0,
+                temperature=0.6,
                 tools=config_tools if config_tools else None
             )
             
@@ -470,7 +487,31 @@ class AnthropicModel(Model):
             raise AIError(f"Unexpected error in Anthropic provider: {e}") from e
 
 class GrokModel(Model):
-    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None) -> AIResponse:
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
+        if custom_key:
+            import openai
+            client = openai.AsyncOpenAI(api_key=custom_key, base_url="https://api.x.ai/v1")
+            # Fallback to OpenAI-compatible interface for custom keys
+            messages = [
+                {"role": "system", "content": self._get_system_instructions(custom_prompt)}
+            ]
+            for item in contents:
+                if isinstance(item, str):
+                    messages.append({"role": "user", "content": item})
+            try:
+                response = await client.chat.completions.create(
+                    model=self.model_id,
+                    messages=messages,
+                    max_completion_tokens=800,
+                    temperature=0.6
+                )
+                text = response.choices[0].message.content
+                prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+                completion_tokens = response.usage.completion_tokens if response.usage else 0
+                return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
+            except Exception as e:
+                raise AIError(f"Grok custom key query failed: {e}") from e
+
         client = self.clients.get("grok")
         if not client:
             raise AIConfigurationError("Grok client is not configured/available.")
@@ -511,7 +552,7 @@ class GrokModel(Model):
             if not text:
                 raise AISafetyBlockedError("Grok response blocked by safety filters.")
             prompt_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') and response.usage else 0
-            completion_tokens = response.usage.completion_tokens if hasattr(response, 'usage') and response.usage else 0
+            completion_tokens = response.usage.completion_tokens if response.usage else 0
             
             return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
         except Exception as e:
@@ -563,11 +604,105 @@ class GrokModel(Model):
             
         return None, None
 
+class DeepSeekModel(OpenAIModel):
+    """DeepSeek LLM Integration via OpenAI-compatible endpoint."""
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
+        if custom_key:
+            import openai
+            client = openai.AsyncOpenAI(api_key=custom_key, base_url="https://api.deepseek.com")
+        else:
+            client = self.clients.get("deepseek")
+            
+        if not client:
+            raise AIConfigurationError("DeepSeek client is not configured/available.")
+        
+        query_contents = contents if self.supports_vision else [item for item in contents if isinstance(item, str)]
+        try:
+            messages = self._convert_prompt(query_contents, is_responses_api=False, custom_prompt=custom_prompt)
+            response = await client.chat.completions.create(
+                model=self.model_id,
+                messages=messages,
+                max_completion_tokens=800,
+                temperature=0.6
+            )
+            text = response.choices[0].message.content
+            prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            
+            if not text:
+                raise AISafetyBlockedError("DeepSeek response blocked or empty.")
+            
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
+        except openai.RateLimitError as e:
+            raise AIRateLimitError("DeepSeek rate limit exceeded") from e
+        except (openai.APIConnectionError, openai.APITimeoutError) as e:
+            raise AIServiceUnavailableError("DeepSeek connection or timeout error") from e
+        except openai.AuthenticationError as e:
+            raise AIConfigurationError("DeepSeek invalid API key or configuration") from e
+        except openai.APIStatusError as e:
+            if e.status_code == 429:
+                raise AIRateLimitError("DeepSeek rate limit exceeded") from e
+            elif e.status_code >= 500:
+                raise AIServiceUnavailableError(f"DeepSeek service unavailable (status {e.status_code})") from e
+            else:
+                raise AIError(f"DeepSeek API status error: {e}") from e
+        except Exception as e:
+            raise AIError(f"Unexpected error in DeepSeek provider: {e}") from e
+
+
+class GLMModel(OpenAIModel):
+    """GLM (Z.ai / Zhipu) LLM Integration via OpenAI-compatible endpoint."""
+    async def _execute_query(self, contents: list, timeout: float = 15.0, custom_prompt: typing.Optional[str] = None, custom_key: typing.Optional[str] = None) -> AIResponse:
+        if custom_key:
+            import openai
+            client = openai.AsyncOpenAI(api_key=custom_key, base_url="https://open.bigmodel.cn/api/paas/v4")
+        else:
+            client = self.clients.get("glm")
+            
+        if not client:
+            raise AIConfigurationError("GLM client is not configured/available.")
+        
+        query_contents = contents if self.supports_vision else [item for item in contents if isinstance(item, str)]
+        try:
+            messages = self._convert_prompt(query_contents, is_responses_api=False, custom_prompt=custom_prompt)
+            response = await client.chat.completions.create(
+                model=self.model_id,
+                messages=messages,
+                max_completion_tokens=800,
+                temperature=0.6
+            )
+            text = response.choices[0].message.content
+            prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            
+            if not text:
+                raise AISafetyBlockedError("GLM response blocked or empty.")
+            
+            return AIResponse(text, prompt_tokens, completion_tokens, model_name=self.display_name, provider=self.provider)
+        except openai.RateLimitError as e:
+            raise AIRateLimitError("GLM rate limit exceeded") from e
+        except (openai.APIConnectionError, openai.APITimeoutError) as e:
+            raise AIServiceUnavailableError("GLM connection or timeout error") from e
+        except openai.AuthenticationError as e:
+            raise AIConfigurationError("GLM invalid API key or configuration") from e
+        except openai.APIStatusError as e:
+            if e.status_code == 429:
+                raise AIRateLimitError("GLM rate limit exceeded") from e
+            elif e.status_code >= 500:
+                raise AIServiceUnavailableError(f"GLM service unavailable (status {e.status_code})") from e
+            else:
+                raise AIError(f"GLM API status error: {e}") from e
+        except Exception as e:
+            raise AIError(f"Unexpected error in GLM provider: {e}") from e
+
+
 PROVIDER_MAP = {
     "gemini": GeminiModel,
     "openai": OpenAIModel,
     "anthropic": AnthropicModel,
-    "grok": GrokModel
+    "grok": GrokModel,
+    "deepseek": DeepSeekModel,
+    "glm": GLMModel
 }
 
 class ModelManager:
@@ -575,6 +710,7 @@ class ModelManager:
     def __init__(self):
         self.clients = {}
         self.models = {}
+        self.pipeline = []
         
         # Initialize Google Client
         gemini_key = os.getenv("GEMINI_API_KEY")
@@ -611,6 +747,22 @@ class ModelManager:
             self.clients["grok_openai"] = openai.AsyncOpenAI(api_key=grok_key, base_url="https://api.x.ai/v1")
         else:
             logger.warning("GROK_API_KEY / XAI_API_KEY not found in environment variables.")
+
+        # Initialize DeepSeek Client
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if deepseek_key:
+            import openai
+            self.clients["deepseek"] = openai.AsyncOpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com")
+        else:
+            logger.warning("DEEPSEEK_API_KEY not found in environment variables.")
+
+        # Initialize GLM Client
+        glm_key = os.getenv("GLM_API_KEY") or os.getenv("ZHIPU_API_KEY") or os.getenv("ZAI_API_KEY")
+        if glm_key:
+            import openai
+            self.clients["glm"] = openai.AsyncOpenAI(api_key=glm_key, base_url="https://open.bigmodel.cn/api/paas/v4")
+        else:
+            logger.warning("GLM_API_KEY / ZHIPU_API_KEY not found in environment variables.")
             
         default_config = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models.json")
         if os.path.exists(default_config):
@@ -621,11 +773,12 @@ class ModelManager:
             config_data = json.load(f)
             
         self.models = {}
+        self.pipeline = config_data.get("pipeline", ["gemini-3.7-flash", "gemini-3.6-flash"])
         default_inst_list = config_data.get("default_instruction", [])
         default_inst = "\n".join(default_inst_list) if isinstance(default_inst_list, list) else default_inst_list
         
         for name, config in config_data.items():
-            if name == "default_instruction":
+            if name in ["default_instruction", "pipeline"]:
                 continue
             provider = config.get("provider")
             model_class = PROVIDER_MAP.get(provider)
@@ -635,7 +788,7 @@ class ModelManager:
             self.models[name] = model_class(name, config, self.clients, default_instruction=default_inst)
 
     async def execute(self, guild_settings: dict, contents: list, image_quota_checker: typing.Optional[typing.Callable] = None) -> AIResponse:
-        """Consolidates fixed 3-tier resilient failover pipeline execution (with BYOK support)."""
+        """Consolidates dynamic resilient failover pipeline execution (with BYOK support)."""
         from cogs.utils.exceptions import (
             AIError,
             AIRateLimitError,
@@ -645,14 +798,31 @@ class ModelManager:
         )
         
         # 1. Custom server prompt add-on (for Premium / BYOK)
-        custom_prompt = guild_settings.get("custom_prompt") if (guild_settings.get("is_premium") or any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key"])) else None
+        has_byok = any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"])
+        custom_prompt = guild_settings.get("custom_prompt") if (guild_settings.get("is_premium") or has_byok) else None
         
-        # 2. Fixed 3-Tier Disaster-Resilient Pipeline
-        # Tier 1 (Primary): Gemini 3.7 Flash
-        # Tier 2 (Intra-Google Fallback): Gemini 2.5 Flash
-        # Tier 3 (Cross-Provider Disaster Recovery): Grok 4.3 (xAI)
-        model_names = ["gemini-3.7-flash", "gemini-2.5-flash", "grok-4.3"]
+        # 2. Configurable Dynamic Pipeline (Custom 2-Model BYOK Pipeline or Default Managed Pipeline)
+        if has_byok and (guild_settings.get("byok_primary_model") or guild_settings.get("byok_fallback_model")):
+            model_names = []
+            if guild_settings.get("byok_primary_model"):
+                model_names.append(guild_settings["byok_primary_model"])
+            if guild_settings.get("byok_fallback_model") and guild_settings["byok_fallback_model"] not in model_names:
+                model_names.append(guild_settings["byok_fallback_model"])
+            if not model_names:
+                model_names = self.pipeline if self.pipeline else ["gemini-3.7-flash", "gemini-3.6-flash"]
+        else:
+            model_names = self.pipeline if self.pipeline else ["gemini-3.7-flash", "gemini-3.6-flash"]
+        
         timeout = float(guild_settings.get("llm_timeout", 15))
+        
+        provider_key_map = {
+            "gemini": "byok_gemini_key",
+            "openai": "byok_openai_key",
+            "anthropic": "byok_anthropic_key",
+            "grok": "byok_xai_key",
+            "deepseek": "byok_deepseek_key",
+            "glm": "byok_glm_key"
+        }
         
         last_exception = None
         for name in model_names:
@@ -662,10 +832,13 @@ class ModelManager:
                 continue
                 
             try:
+                custom_key_col = provider_key_map.get(model.provider)
+                custom_key = guild_settings.get(custom_key_col) if custom_key_col else None
+
                 actual_timeout = timeout + 90.0 if model.supports_image_gen else timeout
-                logger.info(f"Attempting response using model: {name} (timeout: {actual_timeout}s)")
+                logger.info(f"Attempting response using model: {name} (timeout: {actual_timeout}s, byok={'yes' if custom_key else 'no'})")
                 response = await asyncio.wait_for(
-                    model.query(contents, timeout=actual_timeout, custom_prompt=custom_prompt, image_quota_checker=image_quota_checker),
+                    model.query(contents, timeout=actual_timeout, custom_prompt=custom_prompt, image_quota_checker=image_quota_checker, custom_key=custom_key),
                     timeout=float(actual_timeout)
                 )
                 if name != model_names[0]:
@@ -726,18 +899,26 @@ class ContextManager:
         return 'image/jpeg'
 
     @classmethod
-    def format_history(cls, message_list: list) -> str:
-        result = ""
+    def format_history(cls, message_list: list, bot_user: typing.Optional[typing.Union[discord.User, discord.ClientUser]] = None) -> str:
+        result = []
+        bot_id = bot_user.id if bot_user else None
+        bot_name = getattr(bot_user, "display_name", "spl1ceAI") if bot_user else "spl1ceAI"
+        
         for message in message_list:
+            author_id = getattr(message.author, "id", None)
             sender = getattr(message.author, "display_name", str(message.author))
             content = message.content or ""
+            
+            # Explicitly mark bot's own past responses vs other human users
+            is_self = (author_id == bot_id) if bot_id else getattr(message.author, "bot", False)
+            speaker_tag = f"You ({bot_name})" if is_self else f"User: {sender}"
             
             attachments_str = ""
             if message.attachments:
                 att_types = []
                 for att in message.attachments:
                     if cls._is_image(att):
-                        att_types.append("[Image]")
+                        att_types.append("[Image Attachment]")
                     else:
                         att_types.append(f"[{att.filename}]")
                 attachments_str = " " + " ".join(att_types)
@@ -751,11 +932,11 @@ class ContextManager:
             
             msg_text = (content + attachments_str).strip()
             if msg_text:
-                result += f"[{sender}]{reply_note}: {msg_text}\n"
-        return result
+                result.append(f"[{speaker_tag}]{reply_note}: {msg_text}")
+        return "\n".join(result)
 
     @classmethod
-    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str, slash_attachments: list = None, enable_vision: bool = True) -> list:
+    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str, slash_attachments: list = None, enable_vision: bool = True, bot_user: typing.Optional[typing.Union[discord.User, discord.ClientUser]] = None) -> list:
         contents = []
         processed_ids = set()
         
@@ -819,9 +1000,18 @@ class ContextManager:
                 except Exception as e:
                     logger.error(f"Failed to read text attachment {att.filename}: {e}")
                     
-        # 3. Add the formatted context and prompt
-        formatted_history = cls.format_history(history)
-        full_prompt = f"Recent Chat:\n{formatted_history}\n\n{prompt}"
+        # 3. Add the formatted context and prompt with clean structure
+        formatted_history = cls.format_history(history, bot_user=bot_user)
+        if formatted_history:
+            full_prompt = (
+                f"<conversation_history>\n"
+                f"{formatted_history}\n"
+                f"</conversation_history>\n\n"
+                f"{prompt}"
+            )
+        else:
+            full_prompt = prompt
+            
         contents.append(full_prompt)
         
         return contents
