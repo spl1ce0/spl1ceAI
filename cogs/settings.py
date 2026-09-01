@@ -918,7 +918,7 @@ class PlanSettingsContainer(ui.Container):
                 )
                 nav_row.add_item(upgrade_btn)
             else:
-                final_portal = self.portal_url or "https://polar.sh/purchases/subscriptions"
+                final_portal = self.portal_url or "https://polar.sh/spl1ceai/portal"
                 portal_btn = ui.Button(
                     label="Manage Billing",
                     url=final_portal,
@@ -1052,10 +1052,10 @@ class SettingsView(ui.LayoutView):
                     if sub and sub.get("customer_id"):
                         self.plan_portal_url = billing_cog.billing_service.get_customer_portal_url(sub["customer_id"])
                     else:
-                        self.plan_portal_url = "https://polar.sh/purchases/subscriptions"
+                        self.plan_portal_url = "https://polar.sh/spl1ceai/portal"
                 except Exception as e:
                     logger.error(f"Error getting billing links in settings: {e}")
-                    self.plan_portal_url = "https://polar.sh/purchases/subscriptions"
+                    self.plan_portal_url = "https://polar.sh/spl1ceai/portal"
 
         is_premium = bool(self.guild_settings.get("is_premium", 0))
         has_byok = bool(

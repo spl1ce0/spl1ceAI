@@ -18,6 +18,7 @@ class PolarBillingService:
         self.access_token = os.getenv("POLAR_ACCESS_TOKEN") or os.getenv("POLAR_API_KEY")
         self.product_id = os.getenv("POLAR_PRODUCT_ID")
         self.webhook_secret = os.getenv("POLAR_WEBHOOK_SECRET")
+        self.org_slug = os.getenv("POLAR_ORGANIZATION_SLUG", "spl1ceai")
 
     @property
     def is_configured(self) -> bool:
@@ -82,7 +83,7 @@ class PolarBillingService:
 
     def get_customer_portal_url(self, customer_id: Optional[str] = None) -> str:
         """Returns the self-service Polar customer subscription management URL."""
-        return "https://polar.sh/purchases/subscriptions"
+        return f"https://polar.sh/{self.org_slug}/portal"
 
     async def sync_active_subscriptions(self, bot) -> int:
         """Queries Polar API for active subscriptions and syncs them to the database and cache."""
