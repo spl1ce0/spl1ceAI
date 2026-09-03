@@ -416,14 +416,10 @@ class DatabaseManager:
 
     # --- Guild Settings Management ---
     
-    async def get_all_guild_settings(self) -> List[Tuple]:
+    async def get_all_guild_settings(self) -> List[Any]:
         """Fetches all guild settings from the database during bot startup."""
         async with self.db.cursor() as cursor:
-            await cursor.execute(
-                "SELECT guild_id, prefix, cbc, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, log_channel, show_model, reply_ping, "
-                "is_premium, custom_prompt, byok_gemini_key, byok_xai_key, byok_openai_key, byok_anthropic_key, footer_show_icon, footer_show_name, footer_show_tokens, footer_show_latency "
-                "FROM guild_settings"
-            )
+            await cursor.execute("SELECT * FROM guild_settings")
             return await cursor.fetchall()
 
     async def initialize_default_guild_settings(self, guild_id: int) -> None:

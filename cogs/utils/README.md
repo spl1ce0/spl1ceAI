@@ -7,8 +7,8 @@ This package contains shared system infrastructure, asynchronous database manage
 ## 📁 Files & Structure
 
 * **`db.py` (`DatabaseManager`)**: Asynchronous SQLite manager using `asqlite`. Handles database initialization, table creation, migrations, server settings persistence, telemetry recording, and state storage.
-* **`constants.py`**: Global UI constants, custom emojis (`Emojis`), error message formatters (`ErrorMessages`), and default configuration values (`DefaultSettings`).
-* **`exceptions.py`**: Custom domain exceptions inheriting from `BotError` (e.g. `AIQuotaReachedError`, `AIRateLimitError`, `AISafetyBlockedError`, `AIServiceUnavailableError`, `AIConfigurationError`).
+* **`constants.py`**: Global UI constants, custom emojis (`Emojis`), domain URLs (`URLs`), error message formatters (`ErrorMessages`), and default configuration values (`DefaultSettings`).
+* **`exceptions.py`**: Custom domain exceptions inheriting from `BotError` across AI (`AIError`, `AIQuotaReachedError`), Economy (`EconomyError`, `InsufficientBalanceError`, `DailyAlreadyClaimedError`), and Tools (`ToolError`, `InvalidURLError`, `MediaTooLongError`, `MediaDownloadError`).
 
 ---
 
@@ -34,7 +34,7 @@ This package contains shared system infrastructure, asynchronous database manage
 | **`user_economy`** | Global user wallet balance, daily reward claims, streak, and lifetime betting volume. | `user_id`, `balance`, `daily_last_claimed`, `daily_streak`, `total_wagered`, `total_won`, `created_at`, `updated_at` |
 | **`blackjack_stats`** | Deep aggregated statistics for Blackjack players. | `user_id`, `wagered`, `won`, `hands_played`, `hands_won`, `hands_lost`, `hands_pushed`, `blackjacks`, `biggest_win` |
 | **`guild_weekly_usage`** | Weekly AI token usage, prompt counts, and image counts per server. | `guild_id`, `week_start`, `total_tokens`, `input_tokens`, `output_tokens`, `prompt_count`, `image_count`, `last_image_ts`, `created_at`, `updated_at` |
-| **`guild_subscriptions`** | Stripe customer and subscription status per server. | `guild_id`, `customer_id`, `subscription_id`, `status`, `user_id`, `price_id`, `current_period_end`, `cancel_at_period_end`, `created_at`, `updated_at` |
+| **`guild_subscriptions`** | Polar customer and subscription status per server. | `guild_id`, `customer_id`, `subscription_id`, `status`, `user_id`, `price_id`, `current_period_end`, `cancel_at_period_end`, `created_at`, `updated_at` |
 
 ---
 

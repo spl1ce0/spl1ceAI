@@ -34,3 +34,56 @@ class AIQuotaReachedError(AIError):
         super().__init__(message)
         self.reset_ts = reset_ts
         self.is_image = is_image
+
+
+# =========================================================================
+# --- ECONOMY & CASINO ERRORS ---
+# =========================================================================
+
+class EconomyError(BotError):
+    """Base exception for all economy, casino, and wallet errors."""
+    pass
+
+
+class InsufficientBalanceError(EconomyError):
+    """Raised when a user attempts an action without enough coins."""
+    def __init__(self, current_balance: float = 0.0, required_amount: float = 0.0):
+        self.current_balance = current_balance
+        self.required_amount = required_amount
+        super().__init__(f"Insufficient funds: Have {current_balance:.2f}, need {required_amount:.2f}")
+
+
+class DailyAlreadyClaimedError(EconomyError):
+    """Raised when a user attempts to claim their daily reward too early."""
+    def __init__(self, next_claim_ts: int):
+        self.next_claim_ts = next_claim_ts
+        super().__init__(f"Daily already claimed. Next claim available at {next_claim_ts}")
+
+
+# =========================================================================
+# --- TOOLS & MEDIA ERRORS ---
+# =========================================================================
+
+class ToolError(BotError):
+    """Base exception for utility and media tool failures."""
+    pass
+
+
+class InvalidURLError(ToolError):
+    """Raised when a supplied URL is invalid or malformed."""
+    def __init__(self, message: str = "Invalid URL provided."):
+        super().__init__(message)
+
+
+class MediaTooLongError(ToolError):
+    """Raised when a video/audio exceeds the maximum processing duration."""
+    def __init__(self, max_minutes: int = 15):
+        self.max_minutes = max_minutes
+        super().__init__(f"Media duration exceeds maximum limit of {max_minutes} minutes.")
+
+
+class MediaDownloadError(ToolError):
+    """Raised when downloading or converting media fails."""
+    def __init__(self, message: str = "Failed to download or process media file."):
+        super().__init__(message)
+

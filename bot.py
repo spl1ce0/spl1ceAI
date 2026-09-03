@@ -74,28 +74,9 @@ class Spl1ceAI(commands.AutoShardedBot):
 
         rows = await self.db_manager.get_all_guild_settings()
         for row in rows:
-            self.settings_cache[row[0]] = {
-                "prefix": row[1],
-                "cbc": row[2],
-                "llm_primary": row[3],
-                "llm_backup1": row[4],
-                "llm_backup2": row[5],
-                "llm_backup3": row[6],
-                "llm_timeout": row[7],
-                "log_channel": row[8],
-                "show_model": row[9],
-                "reply_ping": row[10],
-                "is_premium": row[11] if len(row) > 11 else 0,
-                "custom_prompt": row[12] if len(row) > 12 else None,
-                "byok_gemini_key": row[13] if len(row) > 13 else None,
-                "byok_xai_key": row[14] if len(row) > 14 else None,
-                "byok_openai_key": row[15] if len(row) > 15 else None,
-                "byok_anthropic_key": row[16] if len(row) > 16 else None,
-                "footer_show_icon": row[17] if len(row) > 17 else 1,
-                "footer_show_name": row[18] if len(row) > 18 else 1,
-                "footer_show_tokens": row[19] if len(row) > 19 else 1,
-                "footer_show_latency": row[20] if len(row) > 20 else 1,
-            }
+            data = dict(row)
+            guild_id = data.pop("guild_id")
+            self.settings_cache[guild_id] = data
 
         for extension in self.initial_extensions:
             log.info(f"Extension {extension} loaded")

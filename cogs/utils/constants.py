@@ -17,6 +17,8 @@ class Emojis:
     CLAUDE = "<:sAI_claude:1515922404671754411>"
     DEEPSEEK = "<:sAI_deepseek:1515922761732849664>"
     GROK = "<:sAI_grok:1516602717290893383>"
+    GLM = "🇨🇳"
+    COIN = "🪙"
     
     # Custom fun & system emojis
     YELLOW_LOOK = "<:CC_yellow_look:1440119405991166186>"
@@ -69,9 +71,9 @@ class Emojis:
     ARROW_RIGHT = "▶"
 
 class ErrorMessages:
-    QUOTA_REACHED = f"{Emojis.AI_FROWN} Daily AI token quota reached! Please try again tomorrow."
-    BUSY_OR_LIMIT = f"{Emojis.AI_HIGH_DEMAND} API is too busy or you got rate limited! Please try again in a moment."
-    SAFETY_BLOCKED = "🛡️ Response blocked by Gemini safety filters."
+    QUOTA_REACHED = f"{Emojis.AI_FROWN} Weekly AI token quota reached! Please check `/quota` or `/upgrade`."
+    BUSY_OR_LIMIT = f"{Emojis.AI_HIGH_DEMAND} AI service is too busy or rate limited! Please try again in a moment."
+    SAFETY_BLOCKED = "🛡️ Response blocked by AI safety filters."
     UNEXPECTED = f"{Emojis.WARNING} An unexpected error occurred while processing your request."
 
     @staticmethod
@@ -144,6 +146,13 @@ class InfoMessages:
         return f"📊 **AI Usage Today ({day})**\nNo usage recorded today."
 
 
+class URLs:
+    WEBSITE = "https://spl1ceai.com"
+    PORTAL = "https://polar.sh/spl1ceai/portal"
+    INVITE = "https://spl1ceai.com/invite"
+    SUPPORT = "https://discord.gg"
+
+
 class DefaultSettings:
     PREFIX = "!"
     CBC = None
@@ -174,6 +183,7 @@ class DefaultSettings:
     FREE_IMAGE_GEN_LIMIT_BIWEEKLY = 1
     PREMIUM_IMAGE_GEN_LIMIT_WEEKLY = 5
     PREMIUM_PRICE_EUR = "2.99€"
-    STRIPE_PRICE_ID = "price_spl1ceai_premium_monthly"
-    STRIPE_WEBHOOK_PORT = 8080
+    POLAR_ORGANIZATION_SLUG = "spl1ceai"
+    WEBHOOK_PORT = 8080
+    STRIPE_WEBHOOK_PORT = 8080  # Backward-compatible alias
 

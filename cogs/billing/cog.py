@@ -280,7 +280,7 @@ class Billing(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.billing_service = PolarBillingService()
-        port = int(DefaultSettings.STRIPE_WEBHOOK_PORT)
+        port = int(getattr(DefaultSettings, "WEBHOOK_PORT", 8080))
         self.webhook_server = PolarWebhookServer(bot, self.billing_service, port=port)
 
     async def cog_load(self):

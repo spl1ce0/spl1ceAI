@@ -15,6 +15,7 @@ from .blackjack import TableManager
 from .blackjack_views import BlackjackLobbyView
 from .wallet_views import WalletView
 from cogs.utils.constants import Emojis
+from cogs.utils.exceptions import DailyAlreadyClaimedError
 
 logger = logging.getLogger(__name__)
 
@@ -950,11 +951,7 @@ class Games(commands.Cog):
                 ephemeral=True
             )
         else:
-            next_ts = res["next_claim_timestamp"]
-            await ctx.reply(
-                f"⏱️ You already claimed your daily reward today!\nNext reward available <t:{next_ts}:R> (in <t:{next_ts}:t>).",
-                ephemeral=True
-            )
+            raise DailyAlreadyClaimedError(next_claim_ts=res["next_claim_timestamp"])
 
     @commands.hybrid_command(name="blackjack", aliases=["bj", "casino"])
     @commands.guild_only()

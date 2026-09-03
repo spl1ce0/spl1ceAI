@@ -8,7 +8,8 @@ import yt_dlp
 import discord
 from discord.ext import commands
 from discord import ui
-from cogs.utils.constants import Emojis, ErrorMessages
+from cogs.utils.constants import Emojis
+from cogs.utils.exceptions import InvalidURLError, MediaTooLongError, MediaDownloadError
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,7 @@ class Tools(commands.Cog):
 
         # Loose validation to support all YouTube subdomains (m., music., etc.) and share links
         if not ("youtube.com" in url.lower() or "youtu.be" in url.lower()):
-            await ctx.reply(ErrorMessages.YT_INVALID_URL)
-            return
+            raise InvalidURLError("Invalid YouTube URL. Please provide a valid youtube.com or youtu.be link.")
 
         # Common yt-dlp options for metadata extraction
         ydl_opts_info = {
@@ -72,12 +72,12 @@ class Tools(commands.Cog):
                 
             duration = info.get('duration')
             if duration and duration > self.max_duration_seconds:
-                await ctx.reply(ErrorMessages.YT_TOO_LONG)
-                return
+                raise MediaTooLongError(max_minutes=15)
+        except MediaTooLongError:
+            raise
         except Exception as e:
             logger.error(f"Failed to extract video info: {e}")
-            await ctx.reply(ErrorMessages.YT_INVALID_URL)
-            return
+            raise InvalidURLError("Could not access video. Please verify the URL and that the video is public.")
 
         # Prepare temporary directory for download
         tmpdir = await asyncio.to_thread(tempfile.mkdtemp)
@@ -107,22 +107,23 @@ class Tools(commands.Cog):
                     break
 
             if not mp3_file or not os.path.exists(mp3_file):
-                raise FileNotFoundError("MP3 file not found after conversion.")
+                raise MediaDownloadError("MP3 conversion failed or output file could not be generated.")
 
             # Check filesize to make sure it is under the Discord limit
             file_size = os.path.getsize(mp3_file)
             max_size = 25 * 1024 * 1024  # 25 MB
             if file_size > max_size:
-                await ctx.reply(f"{Emojis.WARNING} The converted audio file is too large (`{file_size / (1024*1024):.1f}MB`) to upload to Discord.")
-                return
+                raise MediaDownloadError(f"Converted audio file ({file_size / (1024*1024):.1f}MB) exceeds Discord's 25MB upload limit.")
 
             with open(mp3_file, 'rb') as f:
                 discord_file = discord.File(f, filename=os.path.basename(mp3_file))
                 await ctx.reply(file=discord_file)
 
+        except (InvalidURLError, MediaTooLongError, MediaDownloadError):
+            raise
         except Exception as e:
             logger.error(f"Failed to convert YouTube to MP3: {e}")
-            await ctx.reply(ErrorMessages.YT_DOWNLOAD_FAILED)
+            raise MediaDownloadError(f"Failed to download or convert the video: {e}")
         finally:
             # Cleanup temp directory
             await asyncio.to_thread(shutil.rmtree, tmpdir, ignore_errors=True)
