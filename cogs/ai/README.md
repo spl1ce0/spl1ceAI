@@ -28,7 +28,7 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
 
 | Feature | 🆓 Free Snapshot Plan (0.00€) | 👑 Premium Guild Plan (2.99€/mo) | 🔑 BYOK Mode (Bring Your Own Key) |
 | :--- | :--- | :--- | :--- |
-| **Weekly Token Pool** | **100,000 tokens / week** | **500,000 tokens / week** | **Unlimited / Unmetered** |
+| **Weekly Token Pool** | **100,000 tokens / week** | **1,000,000 tokens / week** | **Unlimited / Unmetered** |
 | **Reset Cycle** | Mondays 00:00 UTC | Mondays 00:00 UTC | N/A (Billed to user's key) |
 | **AI Model Brain** | `gemini-3.7-flash` | `gemini-3.7-flash` | Selected / Configured provider |
 | **Context Window** | 5 msgs (`/ask`) • 15 msgs (chat) | 30 msgs everywhere | 30 msgs everywhere |

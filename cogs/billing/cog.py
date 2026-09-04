@@ -137,7 +137,7 @@ class PremiumContainer(ui.Container):
             content = (
                 f"## Premium Plan{curr_tag}\n"
                 f"**2.99€ / month**\n\n"
-                f"✅ 500k tokens/week\n"
+                f"✅ 1M tokens/week\n"
                 f"✅ 30 message context window\n"
                 f"✅ 20 image gens/month\n"
                 f"✅ Websearch\n"

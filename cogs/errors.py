@@ -113,7 +113,7 @@ def build_quota_card(error: AIQuotaReachedError, checkout_url: Optional[str] = N
         )
 
     # Token Quota
-    tip = "Server admins can upgrade to **Premium (500k tokens/wk)** with `/upgrade` or link a free API key in `/settings`."
+    tip = "Server admins can upgrade to **Premium (1M tokens/wk)** with `/upgrade` or link a free API key in `/settings`."
     if reset_ts:
         details_text = f"-# Weekly quota resets <t:{reset_ts}:R> *(Monday 00:00 UTC)*.\n-# {tip}"
     else:

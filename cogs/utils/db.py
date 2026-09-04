@@ -643,9 +643,9 @@ class DatabaseManager:
                         res_ts = int(last_img + fourteen_days)
                         return False, f"Free plan allows 1 AI image generation every 2 weeks. Available again <t:{res_ts}:R>.", usage
         else:
-            token_limit = 500_000 if is_premium else 100_000
+            token_limit = DefaultSettings.PREMIUM_WEEKLY_TOKEN_LIMIT if is_premium else DefaultSettings.FREE_WEEKLY_TOKEN_LIMIT
             if usage["total_tokens"] >= token_limit:
-                tier_name = "Premium (500k)" if is_premium else "Free (100k)"
+                tier_name = "Premium (1M)" if is_premium else "Free (100k)"
                 return False, f"Server has reached the weekly {tier_name} token quota ({usage['total_tokens']:,} / {token_limit:,}). Resets <t:{usage['next_reset_ts']}:R>.", usage
         
         return True, None, usage

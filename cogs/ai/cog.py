@@ -16,7 +16,7 @@ from cogs.utils.exceptions import (
     AIConfigurationError,
     AIQuotaReachedError
 )
-from cogs.utils.constants import Emojis, ErrorMessages, SuccessMessages, InfoMessages
+from cogs.utils.constants import Emojis, ErrorMessages, SuccessMessages, InfoMessages, DefaultSettings
 from .ai import ModelManager, ContextManager, ResponseHandler
 
 logger = logging.getLogger(__name__)
@@ -51,10 +51,10 @@ class QuotaContainer(ui.Container):
             token_limit = None
         elif is_premium:
             plan_name = "Premium Plan"
-            token_limit = 500_000
+            token_limit = DefaultSettings.PREMIUM_WEEKLY_TOKEN_LIMIT
         else:
             plan_name = "Free Plan"
-            token_limit = 100_000
+            token_limit = DefaultSettings.FREE_WEEKLY_TOKEN_LIMIT
 
         total_tokens = int(self.usage_data.get("total_tokens", 0))
         reset_ts = self.usage_data.get("next_reset_ts", int(time.time() + 86400 * 7))
@@ -169,7 +169,7 @@ class QuotaContainer(ui.Container):
             self.add_item(ui.Separator())
             upgrade_text = (
                 f"**Need More Capacity?**\n"
-                f"-# Upgrade to Premium for 500,000 tokens/week, 30-message memory, and image vision."
+                f"-# Upgrade to Premium for 1,000,000 tokens/week, 30-message memory, and image vision."
             )
             self.add_item(ui.TextDisplay(upgrade_text))
 
