@@ -798,7 +798,7 @@ class ModelManager:
         )
         
         # 1. Custom server prompt add-on (for Premium / BYOK)
-        has_byok = any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"])
+        has_byok = bool(guild_settings.get("byok_enabled", 1)) and any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"])
         custom_prompt = guild_settings.get("custom_prompt") if (guild_settings.get("is_premium") or has_byok) else None
         
         # 2. Configurable Dynamic Pipeline (Custom 2-Model BYOK Pipeline or Default Managed Pipeline)
@@ -833,7 +833,7 @@ class ModelManager:
                 
             try:
                 custom_key_col = provider_key_map.get(model.provider)
-                custom_key = guild_settings.get(custom_key_col) if custom_key_col else None
+                custom_key = guild_settings.get(custom_key_col) if (has_byok and custom_key_col) else None
 
                 actual_timeout = timeout + 90.0 if model.supports_image_gen else timeout
                 logger.info(f"Attempting response using model: {name} (timeout: {actual_timeout}s, byok={'yes' if custom_key else 'no'})")

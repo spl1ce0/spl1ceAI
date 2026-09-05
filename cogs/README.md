@@ -23,7 +23,7 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 | **`fun.py`** | `Fun` | `/sealion`, `/anoomals`, `/ban`, `/quote` | Random TikTok video scrapers/downloaders (`yt-dlp`), fake ban UI container card, and dynamic image quote card generation (Pillow + Pilmoji). |
 | **`help.py`** | `Help` | `/help` (`/h`, `/cmds`, `/bothelp`) | Dynamic 2-level interactive command center with category browsing, detailed command inspector, permissions badging, and owner-only dev category filtering. |
 | **`logs.py`** | `Logs` | `on_message_delete`, `on_raw_message_delete`, `on_message_edit` | Audit logging sending rich embeds to configured server `logs_channel`. |
-| **`settings.py`** | `Settings` | `/settings` | Interactive server dashboard UI managing prefix, chatbot channel (`cbc`), logs channel, fallback model stack, granular AI reply footer customization submenu, and author ping settings with audit telemetry trail (`settings_audit_telemetry`). |
+| **`settings.py`** | `Settings` | `/settings` | Interactive server dashboard UI managing prefix, chatbot channel (`cbc`), logs channel, author ping settings, dedicated Bring Your Own Key (BYOK) subpage with toggle, provider keys modal, and model fallback stack configuration, plus granular AI reply footer customization with audit telemetry trail (`settings_audit_telemetry`). |
 | **`tools.py`** | `Tools` | `/ytmp3`, `/avatar` | YouTube audio extractor (`yt-dlp` to MP3) and high-resolution user avatar inspector with direct CDN links. |
 
 ---

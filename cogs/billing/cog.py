@@ -255,7 +255,7 @@ class PremiumView(ui.LayoutView):
         self.clear_items()
         is_premium = self.bot.settings_cache.get(self.guild.id, {}).get("is_premium", 0) == 1
         guild_settings = self.bot.settings_cache.get(self.guild.id, {})
-        has_byok = any(
+        has_byok = bool(guild_settings.get("byok_enabled", 1)) and any(
             guild_settings.get(k)
             for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"]
         )

@@ -330,6 +330,10 @@ class DatabaseManager:
                 logger.info("Migration: Adding byok_fallback_model column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_fallback_model TEXT")
                 migrated = True
+            if "byok_enabled" not in columns:
+                logger.info("Migration: Adding byok_enabled column to guild_settings")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_enabled INTEGER NOT NULL DEFAULT 1")
+                migrated = True
             if "footer_show_icon" not in columns:
                 logger.info("Migration: Adding footer_show_icon column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_icon INTEGER NOT NULL DEFAULT 1")
@@ -455,7 +459,7 @@ class DatabaseManager:
             "llm_backup2", "llm_backup3", "llm_timeout", "show_model", "reply_ping",
             "is_premium", "custom_prompt", "byok_gemini_key", "byok_xai_key", 
             "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key",
-            "byok_primary_model", "byok_fallback_model",
+            "byok_primary_model", "byok_fallback_model", "byok_enabled",
             "footer_show_icon", "footer_show_name", "footer_show_tokens", "footer_show_latency"
         }
         if key not in allowed_keys:
@@ -618,11 +622,13 @@ class DatabaseManager:
         if not guild_id:
             return True, None, {}
         
-        has_byok = bool(
+        has_byok = bool(guild_settings.get("byok_enabled", 1)) and bool(
             guild_settings.get("byok_gemini_key") or 
             guild_settings.get("byok_xai_key") or 
             guild_settings.get("byok_openai_key") or 
-            guild_settings.get("byok_anthropic_key")
+            guild_settings.get("byok_anthropic_key") or
+            guild_settings.get("byok_deepseek_key") or
+            guild_settings.get("byok_glm_key")
         )
         usage = await self.get_guild_weekly_ai_usage(guild_id)
         if has_byok:
