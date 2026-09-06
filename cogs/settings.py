@@ -565,7 +565,7 @@ class FooterSettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # 1. Model Provider Icon
-        icon_on = self.guild_settings.get("footer_show_icon", 1) == 1
+        icon_on = self.guild_settings.get("footer_show_icon", DefaultSettings.FOOTER_SHOW_ICON) == 1
         icon_disp = ui.TextDisplay(
             f"**Model Provider Icon**\n"
             f"-# Shows the AI provider logo emoji (e.g. {Emojis.GEMINI}, {Emojis.GROK})."
@@ -576,7 +576,7 @@ class FooterSettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # 2. Model Name
-        name_on = self.guild_settings.get("footer_show_name", 1) == 1
+        name_on = self.guild_settings.get("footer_show_name", DefaultSettings.FOOTER_SHOW_NAME) == 1
         name_disp = ui.TextDisplay(
             f"**Model Name**\n"
             f"-# Shows the clean model name (e.g. Gemini 3.7 Flash)."
@@ -587,7 +587,7 @@ class FooterSettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # 3. Tokens Used
-        tokens_on = self.guild_settings.get("footer_show_tokens", 1) == 1
+        tokens_on = self.guild_settings.get("footer_show_tokens", DefaultSettings.FOOTER_SHOW_TOKENS) == 1
         tokens_disp = ui.TextDisplay(
             f"**Tokens Consumed**\n"
             f"-# Displays total input + output tokens for the response."
@@ -598,7 +598,7 @@ class FooterSettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # 4. Latency Time
-        latency_on = self.guild_settings.get("footer_show_latency", 1) == 1
+        latency_on = self.guild_settings.get("footer_show_latency", DefaultSettings.FOOTER_SHOW_LATENCY) == 1
         latency_disp = ui.TextDisplay(
             f"**Response Latency**\n"
             f"-# Displays AI execution duration in milliseconds or seconds."
@@ -634,22 +634,22 @@ class FooterSettingsContainer(ui.Container):
         await interaction.response.edit_message(view=self.parent_view)
 
     async def _toggle_icon(self, interaction: discord.Interaction):
-        curr = self.guild_settings.get("footer_show_icon", 1)
+        curr = self.guild_settings.get("footer_show_icon", DefaultSettings.FOOTER_SHOW_ICON)
         new_val = 0 if curr == 1 else 1
         await self._save_setting(interaction, "footer_show_icon", curr, new_val)
 
     async def _toggle_name(self, interaction: discord.Interaction):
-        curr = self.guild_settings.get("footer_show_name", 1)
+        curr = self.guild_settings.get("footer_show_name", DefaultSettings.FOOTER_SHOW_NAME)
         new_val = 0 if curr == 1 else 1
         await self._save_setting(interaction, "footer_show_name", curr, new_val)
 
     async def _toggle_tokens(self, interaction: discord.Interaction):
-        curr = self.guild_settings.get("footer_show_tokens", 1)
+        curr = self.guild_settings.get("footer_show_tokens", DefaultSettings.FOOTER_SHOW_TOKENS)
         new_val = 0 if curr == 1 else 1
         await self._save_setting(interaction, "footer_show_tokens", curr, new_val)
 
     async def _toggle_latency(self, interaction: discord.Interaction):
-        curr = self.guild_settings.get("footer_show_latency", 1)
+        curr = self.guild_settings.get("footer_show_latency", DefaultSettings.FOOTER_SHOW_LATENCY)
         new_val = 0 if curr == 1 else 1
         await self._save_setting(interaction, "footer_show_latency", curr, new_val)
 
@@ -715,7 +715,7 @@ class BYOKSettingsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # Section 1: Toggle section
-        byok_enabled = self.guild_settings.get("byok_enabled", 1) == 1
+        byok_enabled = self.guild_settings.get("byok_enabled", DefaultSettings.BYOK_ENABLED) == 1
         toggle_state = "on" if byok_enabled else "off"
         toggle_disp = ui.TextDisplay(
             "**BYOK Status**\n"
@@ -814,7 +814,7 @@ class BYOKSettingsContainer(ui.Container):
         await interaction.response.edit_message(view=self.parent_view)
 
     async def _on_toggle_byok(self, interaction: discord.Interaction):
-        curr = self.guild_settings.get("byok_enabled", 1)
+        curr = self.guild_settings.get("byok_enabled", DefaultSettings.BYOK_ENABLED)
         new_val = 0 if curr == 1 else 1
 
         await self.bot.db_manager.update_guild_setting(self.guild.id, "byok_enabled", new_val)
@@ -1133,32 +1133,7 @@ class Settings(commands.Cog):
         """Opens the interactive server configuration panel."""
         guild_id = ctx.guild.id
         if guild_id not in self.bot.settings_cache:
-            self.bot.settings_cache[guild_id] = {
-                "prefix": DefaultSettings.PREFIX,
-                "cbc": DefaultSettings.CBC,
-                "llm_primary": DefaultSettings.LLM_PRIMARY,
-                "llm_backup1": DefaultSettings.LLM_BACKUP1,
-                "llm_backup2": DefaultSettings.LLM_BACKUP2,
-                "llm_backup3": DefaultSettings.LLM_BACKUP3,
-                "llm_timeout": DefaultSettings.LLM_TIMEOUT,
-                "show_model": DefaultSettings.SHOW_MODEL,
-                "reply_ping": DefaultSettings.REPLY_PING,
-                "is_premium": DefaultSettings.IS_PREMIUM,
-                "custom_prompt": DefaultSettings.CUSTOM_PROMPT,
-                "byok_gemini_key": DefaultSettings.BYOK_GEMINI_KEY,
-                "byok_xai_key": DefaultSettings.BYOK_XAI_KEY,
-                "byok_openai_key": DefaultSettings.BYOK_OPENAI_KEY,
-                "byok_anthropic_key": DefaultSettings.BYOK_ANTHROPIC_KEY,
-                "byok_deepseek_key": DefaultSettings.BYOK_DEEPSEEK_KEY,
-                "byok_glm_key": DefaultSettings.BYOK_GLM_KEY,
-                "byok_primary_model": DefaultSettings.BYOK_PRIMARY_MODEL,
-                "byok_fallback_model": DefaultSettings.BYOK_FALLBACK_MODEL,
-                "byok_enabled": DefaultSettings.BYOK_ENABLED,
-                "footer_show_icon": DefaultSettings.FOOTER_SHOW_ICON,
-                "footer_show_name": DefaultSettings.FOOTER_SHOW_NAME,
-                "footer_show_tokens": DefaultSettings.FOOTER_SHOW_TOKENS,
-                "footer_show_latency": DefaultSettings.FOOTER_SHOW_LATENCY,
-            }
+            self.bot.settings_cache[guild_id] = DefaultSettings.get_defaults_dict()
         view = SettingsView(self.bot.settings_cache[guild_id], ctx.guild, self.bot)
         await ctx.reply(view=view)
 

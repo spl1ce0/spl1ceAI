@@ -16,7 +16,7 @@ This package contains shared system infrastructure, asynchronous database manage
 
 | Table Name | Description | Key Columns |
 | :--- | :--- | :--- |
-| **`guild_settings`** | Server-specific configuration, tier flags, custom prompts, BYOK keys, fallback stack, and response footer toggles. | `guild_id`, `prefix`, `cbc`, `log_channel`, `llm_primary`, `llm_backup1`, `llm_backup2`, `llm_backup3`, `llm_timeout`, `show_model`, `reply_ping`, `is_premium`, `custom_prompt`, `byok_gemini_key`, `byok_xai_key`, `byok_openai_key`, `byok_anthropic_key`, `byok_deepseek_key`, `byok_glm_key`, `byok_primary_model`, `byok_fallback_model`, `byok_enabled`, `footer_show_icon`, `footer_show_name`, `footer_show_tokens`, `footer_show_latency` |
+| **`guild_settings`** | Server-specific configuration, tier flags, custom prompts, BYOK keys, fallback stack, and response footer toggles. | `guild_id`, `prefix`, `cbc`, `log_channel`, `llm_primary`, `llm_backup1`, `llm_backup2`, `llm_backup3`, `llm_timeout`, `reply_ping`, `is_premium`, `custom_prompt`, `byok_gemini_key`, `byok_xai_key`, `byok_openai_key`, `byok_anthropic_key`, `byok_deepseek_key`, `byok_glm_key`, `byok_primary_model`, `byok_fallback_model`, `byok_enabled`, `footer_show_icon`, `footer_show_name`, `footer_show_tokens`, `footer_show_latency` |
 | **`guild_weekly_usage`** | Weekly token and image generation consumption tracking per server. | `guild_id`, `week_start`, `total_tokens`, `input_tokens`, `output_tokens`, `prompt_count`, `image_count`, `last_image_ts`, `created_at`, `updated_at` |
 | **`ai_summon`** | Active AI channel listening sessions. | `channel_id`, `expiry` |
 | **`ai_usage`** | Daily token consumption tracking. | `day`, `request_count`, `input_tokens`, `output_tokens` |

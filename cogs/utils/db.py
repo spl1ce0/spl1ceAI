@@ -58,7 +58,7 @@ class DatabaseManager:
                 "updated_at TEXT DEFAULT CURRENT_TIMESTAMP)"
             )
             await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, log_channel INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'openai', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15, show_model INTEGER NOT NULL DEFAULT 1, reply_ping INTEGER NOT NULL DEFAULT 1)"
+                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, log_channel INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'gemini-3.6-flash', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15, reply_ping INTEGER NOT NULL DEFAULT 1)"
             )
 
             # --- Telemetry Tables ---
@@ -282,10 +282,6 @@ class DatabaseManager:
                 logger.info("Migration: Adding llm_timeout column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN llm_timeout INTEGER NOT NULL DEFAULT 15")
                 migrated = True
-            if "show_model" not in columns:
-                logger.info("Migration: Adding show_model column to guild_settings")
-                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN show_model INTEGER NOT NULL DEFAULT 1")
-                migrated = True
             if "reply_ping" not in columns:
                 logger.info("Migration: Adding reply_ping column to guild_settings")
                 await cursor.execute("ALTER TABLE guild_settings ADD COLUMN reply_ping INTEGER NOT NULL DEFAULT 1")
@@ -332,23 +328,23 @@ class DatabaseManager:
                 migrated = True
             if "byok_enabled" not in columns:
                 logger.info("Migration: Adding byok_enabled column to guild_settings")
-                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_enabled INTEGER NOT NULL DEFAULT 1")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN byok_enabled INTEGER NOT NULL DEFAULT 0")
                 migrated = True
             if "footer_show_icon" not in columns:
                 logger.info("Migration: Adding footer_show_icon column to guild_settings")
-                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_icon INTEGER NOT NULL DEFAULT 1")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_icon INTEGER NOT NULL DEFAULT 0")
                 migrated = True
             if "footer_show_name" not in columns:
                 logger.info("Migration: Adding footer_show_name column to guild_settings")
-                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_name INTEGER NOT NULL DEFAULT 1")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_name INTEGER NOT NULL DEFAULT 0")
                 migrated = True
             if "footer_show_tokens" not in columns:
                 logger.info("Migration: Adding footer_show_tokens column to guild_settings")
-                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_tokens INTEGER NOT NULL DEFAULT 1")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_tokens INTEGER NOT NULL DEFAULT 0")
                 migrated = True
             if "footer_show_latency" not in columns:
                 logger.info("Migration: Adding footer_show_latency column to guild_settings")
-                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_latency INTEGER NOT NULL DEFAULT 1")
+                await cursor.execute("ALTER TABLE guild_settings ADD COLUMN footer_show_latency INTEGER NOT NULL DEFAULT 0")
                 migrated = True
                 
             if migrated:
@@ -428,27 +424,16 @@ class DatabaseManager:
 
     async def initialize_default_guild_settings(self, guild_id: int) -> None:
         """Inserts default settings for a newly joined or unconfigured guild."""
+        defaults = DefaultSettings.get_defaults_dict()
+        columns = ["guild_id"] + list(defaults.keys())
+        placeholders = ", ".join(["?"] * len(columns))
+        col_names = ", ".join(columns)
+        values = [guild_id] + list(defaults.values())
+
         async with self.db.cursor() as cursor:
             await cursor.execute(
-                "INSERT OR IGNORE INTO guild_settings (guild_id, prefix, cbc, log_channel, llm_primary, llm_backup1, llm_backup2, llm_backup3, llm_timeout, show_model, reply_ping, footer_show_icon, footer_show_name, footer_show_tokens, footer_show_latency) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    guild_id, 
-                    DefaultSettings.PREFIX, 
-                    DefaultSettings.CBC, 
-                    DefaultSettings.LOG_CHANNEL, 
-                    DefaultSettings.LLM_PRIMARY, 
-                    DefaultSettings.LLM_BACKUP1, 
-                    DefaultSettings.LLM_BACKUP2, 
-                    DefaultSettings.LLM_BACKUP3, 
-                    DefaultSettings.LLM_TIMEOUT,
-                    DefaultSettings.SHOW_MODEL,
-                    DefaultSettings.REPLY_PING,
-                    DefaultSettings.FOOTER_SHOW_ICON,
-                    DefaultSettings.FOOTER_SHOW_NAME,
-                    DefaultSettings.FOOTER_SHOW_TOKENS,
-                    DefaultSettings.FOOTER_SHOW_LATENCY
-                )
+                f"INSERT OR IGNORE INTO guild_settings ({col_names}) VALUES ({placeholders})",
+                values
             )
             await self.db.commit()
 
@@ -456,7 +441,7 @@ class DatabaseManager:
         """Updates a specific guild setting column dynamically."""
         allowed_keys = {
             "prefix", "cbc", "log_channel", "llm_primary", "llm_backup1", 
-            "llm_backup2", "llm_backup3", "llm_timeout", "show_model", "reply_ping",
+            "llm_backup2", "llm_backup3", "llm_timeout", "reply_ping",
             "is_premium", "custom_prompt", "byok_gemini_key", "byok_xai_key", 
             "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key",
             "byok_primary_model", "byok_fallback_model", "byok_enabled",
@@ -622,7 +607,7 @@ class DatabaseManager:
         if not guild_id:
             return True, None, {}
         
-        has_byok = bool(guild_settings.get("byok_enabled", 1)) and bool(
+        has_byok = bool(guild_settings.get("byok_enabled", DefaultSettings.BYOK_ENABLED)) and bool(
             guild_settings.get("byok_gemini_key") or 
             guild_settings.get("byok_xai_key") or 
             guild_settings.get("byok_openai_key") or 

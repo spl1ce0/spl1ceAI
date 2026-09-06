@@ -63,4 +63,4 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
   * **Recent History Attachment Limit (`HISTORY_ATTACHMENT_LIMIT = 3`)**: Automatically scans the last 3 history messages for attachments when vision is active.
 
 ### 3. `ResponseHandler`
-* Manages formatting, rich footer subtext injection (`show_model` setting with custom provider emoji, execution latency, and token consumption), hard 800-token completion limits (preventing runaway token burn), and Discord reply routing.
+* Manages formatting, rich footer subtext injection (modular `footer_show_*` toggles with custom provider emoji, execution latency, and token consumption), hard 800-token completion limits (preventing runaway token burn), and Discord reply routing.

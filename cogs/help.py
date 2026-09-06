@@ -1,14 +1,16 @@
+import math
 import discord
 import discord.ui as ui
 from discord.ext import commands
 import typing
 import logging
 
-from cogs.utils.constants import Emojis
+from cogs.utils.constants import Emojis, URLs
 
 logger = logging.getLogger(__name__)
 
-SUPPORT_SERVER_URL = "https://discord.gg"
+SUPPORT_SERVER_URL = URLs.SUPPORT
+COMMANDS_PER_PAGE = 5
 
 CATEGORY_CONFIG = {
     "ai": {
@@ -97,17 +99,20 @@ def get_command_signature(cmd: commands.Command) -> typing.Tuple[str, list]:
 
 
 class HelpCategoryContainer(ui.Container):
-    def __init__(self, bot, category_key: str, is_owner: bool, parent_view):
+    def __init__(self, bot, category_key: str, is_owner: bool, parent_view, page: int = 0):
         super().__init__()
         self.bot = bot
         self.category_key = category_key
         self.is_owner = is_owner
         self.parent_view = parent_view
+        self.page = page
         self._make_container()
 
     def _make_container(self):
-        # 1. Header
-        self.add_item(ui.TextDisplay("# Help Center"))
+        # 1. Header with Support Server Link Button
+        support_btn = ui.Button(label="Support Server", url=SUPPORT_SERVER_URL, style=discord.ButtonStyle.link)
+        header_display = ui.TextDisplay("# Help Center")
+        self.add_item(ui.Section(header_display, accessory=support_btn))
 
         # 2. Top Category Navigation Bar
         nav_row = ui.ActionRow()
@@ -116,14 +121,14 @@ class HelpCategoryContainer(ui.Container):
                 continue
             is_active = (key == self.category_key)
             style = discord.ButtonStyle.primary if is_active else discord.ButtonStyle.gray
-            btn = ui.Button(label=f"{info['emoji']} {info['name']}", style=style)
+            btn = ui.Button(label=info["name"], style=style)
 
             def make_nav_callback(k):
                 async def _cb(interaction: discord.Interaction):
                     if interaction.user.id != self.parent_view.author.id:
                         await interaction.response.send_message("❌ This help menu is not yours.", ephemeral=True)
                         return
-                    await self.parent_view.render_category(k, interaction)
+                    await self.parent_view.render_category(k, interaction, page=0)
                 return _cb
 
             btn.callback = make_nav_callback(key)
@@ -132,13 +137,20 @@ class HelpCategoryContainer(ui.Container):
         self.add_item(nav_row)
         self.add_item(ui.Separator())
 
-        # 3. Command Listings with Inspect Arrow Buttons
+        # 3. Command Listings with Inspect Arrow Buttons (Paginated)
         cat_commands = self.parent_view.get_category_commands(self.category_key)
+
+        total_pages = max(1, math.ceil(len(cat_commands) / COMMANDS_PER_PAGE)) if cat_commands else 1
+        current_page = max(0, min(self.page, total_pages - 1))
+        self.page = current_page
 
         if not cat_commands:
             self.add_item(ui.TextDisplay("*No commands available in this category.*"))
         else:
-            for cmd in cat_commands:
+            start_idx = current_page * COMMANDS_PER_PAGE
+            page_commands = cat_commands[start_idx : start_idx + COMMANDS_PER_PAGE]
+
+            for cmd in page_commands:
                 usage_str, _ = get_command_signature(cmd)
                 desc = cmd.description or cmd.help or cmd.short_doc or "No description."
                 short_desc = desc.split("\n")[0]
@@ -167,11 +179,34 @@ class HelpCategoryContainer(ui.Container):
                 inspect_btn.callback = make_inspect_callback(cmd)
                 self.add_item(ui.Section(cmd_display, accessory=inspect_btn))
 
-        # 4. Bottom Links Action Row (No Upgrade Button)
+        # 4. Pagination Action Row (always shown)
         self.add_item(ui.Separator())
-        links_row = ui.ActionRow()
-        links_row.add_item(ui.Button(label="Support Server", url=SUPPORT_SERVER_URL, style=discord.ButtonStyle.link))
-        self.add_item(links_row)
+        page_row = ui.ActionRow()
+
+        prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(current_page == 0))
+        page_indicator = ui.Button(label=f"Page {current_page + 1}/{total_pages}", style=discord.ButtonStyle.secondary, disabled=True)
+        next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(current_page >= total_pages - 1))
+
+        async def _on_prev(interaction: discord.Interaction):
+            if interaction.user.id != self.parent_view.author.id:
+                await interaction.response.send_message("❌ This help menu is not yours.", ephemeral=True)
+                return
+            await self.parent_view.render_category(self.category_key, interaction, page=self.page - 1)
+
+        async def _on_next(interaction: discord.Interaction):
+            if interaction.user.id != self.parent_view.author.id:
+                await interaction.response.send_message("❌ This help menu is not yours.", ephemeral=True)
+                return
+            await self.parent_view.render_category(self.category_key, interaction, page=self.page + 1)
+
+        prev_btn.callback = _on_prev
+        next_btn.callback = _on_next
+
+        page_row.add_item(prev_btn)
+        page_row.add_item(page_indicator)
+        page_row.add_item(next_btn)
+        self.add_item(page_row)
+
 
 
 class HelpCommandInspectorContainer(ui.Container):
@@ -217,6 +252,7 @@ class HelpView(ui.LayoutView):
         self.bot = bot
         self.author = author
         self.category_key = initial_category
+        self.category_page = 0
         self.is_owner = False
 
     async def initialize(self, target_command_name: typing.Optional[str] = None):
@@ -225,9 +261,10 @@ class HelpView(ui.LayoutView):
             cmd, cat_key = self.find_command(target_command_name)
             if cmd:
                 self.category_key = cat_key
+                self.category_page = 0
                 await self.render_command(cmd)
                 return
-        await self.render_category(self.category_key)
+        await self.render_category(self.category_key, page=0)
 
     def find_command(self, query: str) -> typing.Tuple[typing.Optional[commands.Command], str]:
         """Finds a command by name or alias and its category key."""
@@ -263,10 +300,14 @@ class HelpView(ui.LayoutView):
 
         return sorted(cmd_list, key=lambda c: c.name)
 
-    async def render_category(self, category_key: str, interaction: typing.Optional[discord.Interaction] = None):
+    async def render_category(self, category_key: str, interaction: typing.Optional[discord.Interaction] = None, page: int = 0):
+        if category_key != self.category_key:
+            self.category_page = 0
+        else:
+            self.category_page = page
         self.category_key = category_key
         self.clear_items()
-        container = HelpCategoryContainer(self.bot, self.category_key, self.is_owner, self)
+        container = HelpCategoryContainer(self.bot, self.category_key, self.is_owner, self, page=self.category_page)
         self.add_item(container)
 
         if interaction:
@@ -284,7 +325,7 @@ class HelpView(ui.LayoutView):
         if interaction.user.id != self.author.id:
             await interaction.response.send_message("❌ This help menu is not yours.", ephemeral=True)
             return
-        await self.render_category(self.category_key, interaction)
+        await self.render_category(self.category_key, interaction, page=self.category_page)
 
 
 class Help(commands.Cog):

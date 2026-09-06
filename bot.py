@@ -111,35 +111,12 @@ class Spl1ceAI(commands.AutoShardedBot):
             if guild.id not in self.settings_cache:
                 log.info(f"Initializing default settings for guild: {guild.name} ({guild.id})")
                 await self.db_manager.initialize_default_guild_settings(guild.id)
-                self.settings_cache[guild.id] = {
-                    "prefix": DefaultSettings.PREFIX,
-                    "cbc": DefaultSettings.CBC,
-                    "llm_primary": DefaultSettings.LLM_PRIMARY,
-                    "llm_backup1": DefaultSettings.LLM_BACKUP1,
-                    "llm_backup2": DefaultSettings.LLM_BACKUP2,
-                    "llm_backup3": DefaultSettings.LLM_BACKUP3,
-                    "llm_timeout": DefaultSettings.LLM_TIMEOUT,
-                    "log_channel": DefaultSettings.LOG_CHANNEL,
-                    "show_model": DefaultSettings.SHOW_MODEL,
-                    "reply_ping": DefaultSettings.REPLY_PING
-                }
-
+                self.settings_cache[guild.id] = DefaultSettings.get_defaults_dict()
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         log.info(f"Joined new guild: {guild.name} ({guild.id})")
         await self.db_manager.initialize_default_guild_settings(guild.id)
-        self.settings_cache[guild.id] = {
-            "prefix": DefaultSettings.PREFIX,
-            "cbc": DefaultSettings.CBC,
-            "llm_primary": DefaultSettings.LLM_PRIMARY,
-            "llm_backup1": DefaultSettings.LLM_BACKUP1,
-            "llm_backup2": DefaultSettings.LLM_BACKUP2,
-            "llm_backup3": DefaultSettings.LLM_BACKUP3,
-            "llm_timeout": DefaultSettings.LLM_TIMEOUT,
-            "log_channel": DefaultSettings.LOG_CHANNEL,
-            "show_model": DefaultSettings.SHOW_MODEL,
-            "reply_ping": DefaultSettings.REPLY_PING
-        }
+        self.settings_cache[guild.id] = DefaultSettings.get_defaults_dict()
 
     async def close(self) -> None:
         if self.db:

@@ -21,7 +21,7 @@ from cogs.utils.exceptions import (
     AISafetyBlockedError,
     AIConfigurationError
 )
-from cogs.utils.constants import Emojis
+from cogs.utils.constants import Emojis, DefaultSettings
 
 logger = logging.getLogger(__name__)
 
@@ -798,7 +798,7 @@ class ModelManager:
         )
         
         # 1. Custom server prompt add-on (for Premium / BYOK)
-        has_byok = bool(guild_settings.get("byok_enabled", 1)) and any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"])
+        has_byok = bool(guild_settings.get("byok_enabled", DefaultSettings.BYOK_ENABLED)) and any(guild_settings.get(k) for k in ["byok_gemini_key", "byok_xai_key", "byok_openai_key", "byok_anthropic_key", "byok_deepseek_key", "byok_glm_key"])
         custom_prompt = guild_settings.get("custom_prompt") if (guild_settings.get("is_premium") or has_byok) else None
         
         # 2. Configurable Dynamic Pipeline (Custom 2-Model BYOK Pipeline or Default Managed Pipeline)
@@ -1028,20 +1028,20 @@ class ResponseHandler:
             
         clean_text = response.text
         
-        footer_show_icon = 1
-        footer_show_name = 1
-        footer_show_tokens = 1
-        footer_show_latency = 1
+        footer_show_icon = DefaultSettings.FOOTER_SHOW_ICON
+        footer_show_name = DefaultSettings.FOOTER_SHOW_NAME
+        footer_show_tokens = DefaultSettings.FOOTER_SHOW_TOKENS
+        footer_show_latency = DefaultSettings.FOOTER_SHOW_LATENCY
         reply_ping = True
 
         guild_id = message_or_ctx.guild.id if getattr(message_or_ctx, 'guild', None) else None
         if self.bot and guild_id:
             guild_settings = self.bot.settings_cache.get(guild_id, {})
-            footer_show_icon = guild_settings.get("footer_show_icon", 1)
-            footer_show_name = guild_settings.get("footer_show_name", 1)
-            footer_show_tokens = guild_settings.get("footer_show_tokens", 1)
-            footer_show_latency = guild_settings.get("footer_show_latency", 1)
-            reply_ping = guild_settings.get("reply_ping", 1) == 1
+            footer_show_icon = guild_settings.get("footer_show_icon", DefaultSettings.FOOTER_SHOW_ICON)
+            footer_show_name = guild_settings.get("footer_show_name", DefaultSettings.FOOTER_SHOW_NAME)
+            footer_show_tokens = guild_settings.get("footer_show_tokens", DefaultSettings.FOOTER_SHOW_TOKENS)
+            footer_show_latency = guild_settings.get("footer_show_latency", DefaultSettings.FOOTER_SHOW_LATENCY)
+            reply_ping = guild_settings.get("reply_ping", DefaultSettings.REPLY_PING) == 1
 
         file = None
         if response.image_bytes:

@@ -150,7 +150,7 @@ class URLs:
     WEBSITE = "https://spl1ceai.com"
     PORTAL = "https://polar.sh/spl1ceai/portal"
     INVITE = "https://spl1ceai.com/invite"
-    SUPPORT = "https://discord.gg"
+    SUPPORT = "https://discord.gg/vNKEJ35esU"
 
 
 class DefaultSettings:
@@ -158,15 +158,14 @@ class DefaultSettings:
     CBC = None
     LOG_CHANNEL = None
     LLM_PRIMARY = "gemini-3.7-flash"
-    LLM_BACKUP1 = "gemini-2.5-flash"
+    LLM_BACKUP1 = "gemini-3.6-flash"
     LLM_BACKUP2 = "grok-4.3"
     LLM_BACKUP3 = "disabled"
     LLM_TIMEOUT = 15
-    SHOW_MODEL = 1
-    FOOTER_SHOW_ICON = 1
-    FOOTER_SHOW_NAME = 1
-    FOOTER_SHOW_TOKENS = 1
-    FOOTER_SHOW_LATENCY = 1
+    FOOTER_SHOW_ICON = 0
+    FOOTER_SHOW_NAME = 0
+    FOOTER_SHOW_TOKENS = 0
+    FOOTER_SHOW_LATENCY = 0
     REPLY_PING = 1
     IS_PREMIUM = 0
     CUSTOM_PROMPT = None
@@ -178,7 +177,7 @@ class DefaultSettings:
     BYOK_GLM_KEY = None
     BYOK_PRIMARY_MODEL = "gemini-3.7-flash"
     BYOK_FALLBACK_MODEL = "gemini-3.6-flash"
-    BYOK_ENABLED = 1
+    BYOK_ENABLED = 0
     FREE_WEEKLY_TOKEN_LIMIT = 100_000
     PREMIUM_WEEKLY_TOKEN_LIMIT = 1_000_000
     FREE_IMAGE_GEN_LIMIT_BIWEEKLY = 1
@@ -187,4 +186,34 @@ class DefaultSettings:
     POLAR_ORGANIZATION_SLUG = "spl1ceai"
     WEBHOOK_PORT = 8080
     STRIPE_WEBHOOK_PORT = 8080  # Backward-compatible alias
+
+    @classmethod
+    def get_defaults_dict(cls) -> dict:
+        """Returns the canonical dictionary of all guild settings with their default values."""
+        return {
+            "prefix": cls.PREFIX,
+            "cbc": cls.CBC,
+            "log_channel": cls.LOG_CHANNEL,
+            "llm_primary": cls.LLM_PRIMARY,
+            "llm_backup1": cls.LLM_BACKUP1,
+            "llm_backup2": cls.LLM_BACKUP2,
+            "llm_backup3": cls.LLM_BACKUP3,
+            "llm_timeout": cls.LLM_TIMEOUT,
+            "reply_ping": cls.REPLY_PING,
+            "is_premium": cls.IS_PREMIUM,
+            "custom_prompt": cls.CUSTOM_PROMPT,
+            "byok_gemini_key": cls.BYOK_GEMINI_KEY,
+            "byok_xai_key": cls.BYOK_XAI_KEY,
+            "byok_openai_key": cls.BYOK_OPENAI_KEY,
+            "byok_anthropic_key": cls.BYOK_ANTHROPIC_KEY,
+            "byok_deepseek_key": cls.BYOK_DEEPSEEK_KEY,
+            "byok_glm_key": cls.BYOK_GLM_KEY,
+            "byok_primary_model": cls.BYOK_PRIMARY_MODEL,
+            "byok_fallback_model": cls.BYOK_FALLBACK_MODEL,
+            "byok_enabled": cls.BYOK_ENABLED,
+            "footer_show_icon": cls.FOOTER_SHOW_ICON,
+            "footer_show_name": cls.FOOTER_SHOW_NAME,
+            "footer_show_tokens": cls.FOOTER_SHOW_TOKENS,
+            "footer_show_latency": cls.FOOTER_SHOW_LATENCY,
+        }
 

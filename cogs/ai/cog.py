@@ -37,7 +37,7 @@ class QuotaContainer(ui.Container):
 
     def _build_ui(self):
         is_premium = bool(self.guild_settings.get("is_premium", 0))
-        has_byok = bool(self.guild_settings.get("byok_enabled", 1)) and bool(
+        has_byok = bool(self.guild_settings.get("byok_enabled", DefaultSettings.BYOK_ENABLED)) and bool(
             self.guild_settings.get("byok_gemini_key") or 
             self.guild_settings.get("byok_xai_key") or 
             self.guild_settings.get("byok_openai_key") or 
