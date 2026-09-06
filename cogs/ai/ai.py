@@ -42,11 +42,13 @@ class AIResponse:
         image_filename: str = None,
         failover_occurred: bool = False,
         failover_reason: str = None,
-        estimated_cost: float = 0.0
+        estimated_cost: float = 0.0,
+        display_name: str = None
     ):
         self.text = text
         self.usage_metadata = AIUsage(prompt_tokens, completion_tokens)
         self.model_name = model_name
+        self.display_name = display_name or model_name
         self.provider = provider
         self.image_bytes = image_bytes
         self.image_filename = image_filename
@@ -112,6 +114,7 @@ class Model(ABC):
         # 1. Run provider-specific text query
         response = await self._execute_query(contents, timeout, custom_prompt=custom_prompt, custom_key=custom_key)
         response.model_name = self.name
+        response.display_name = self.display_name
         response.provider = self.provider
         
         # 2. Check for image generation tags
@@ -1117,7 +1120,8 @@ class ResponseHandler:
 
             # 4. Construct Footer Elements based on active toggles
             parts = []
-            name_part = response.model_name if (response.model_name and footer_show_name == 1) else ""
+            display_model = getattr(response, "display_name", None) or response.model_name
+            name_part = display_model if (display_model and footer_show_name == 1) else ""
             icon_part = provider_icon if (footer_show_icon == 1) else ""
 
             if icon_part and name_part:

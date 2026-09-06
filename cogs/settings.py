@@ -579,7 +579,7 @@ class FooterSettingsContainer(ui.Container):
         name_on = self.guild_settings.get("footer_show_name", DefaultSettings.FOOTER_SHOW_NAME) == 1
         name_disp = ui.TextDisplay(
             f"**Model Name**\n"
-            f"-# Shows the clean model name (e.g. Gemini 3.7 Flash)."
+            f"-# Shows the clean model name (e.g. Gemini 3.8 Flash)."
         )
         name_btn = ui.Button(emoji=Emojis.ON if name_on else Emojis.OFF, style=discord.ButtonStyle.gray)
         name_btn.callback = self._toggle_name
@@ -611,11 +611,11 @@ class FooterSettingsContainer(ui.Container):
         # Live Simulated Preview
         parts = []
         if icon_on and name_on:
-            parts.append(f"{Emojis.GEMINI} Gemini 3.7 Flash")
+            parts.append(f"{Emojis.GEMINI} Gemini 3.8 Flash")
         elif icon_on:
             parts.append(f"{Emojis.GEMINI}")
         elif name_on:
-            parts.append("Gemini 3.7 Flash")
+            parts.append("Gemini 3.8 Flash")
 
         if tokens_on:
             parts.append("345 tokens")
