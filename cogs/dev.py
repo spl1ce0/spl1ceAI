@@ -359,6 +359,42 @@ class Dev(cmds.Cog):
             await ctx.message.add_reaction(Emojis.ERROR)
 
 
+    @cmds.command(name='update_web', aliases=['updateweb', 'update_site'])
+    @cmds.is_owner()
+    async def update_web(self, ctx):
+        """Runs the update_website.sh script to pull and rebuild the website."""
+        await ctx.message.add_reaction(Emojis.RELOAD)
+        
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                './update_website.sh',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            
+            try:
+                await ctx.message.remove_reaction(Emojis.RELOAD, self.bot.user)
+            except Exception:
+                pass
+                
+            if proc.returncode == 0:
+                await ctx.message.add_reaction(Emojis.CHECK)
+                await ctx.reply("✅ **Website updated successfully!** Live at https://spl1ceai.com", mention_author=False)
+            else:
+                await ctx.message.add_reaction(Emojis.ERROR)
+                err_msg = (stderr or stdout).decode()[-1000:]
+                await ctx.reply(f"❌ **Website update failed:**\n```\n{err_msg}\n```", mention_author=False)
+        except Exception as e:
+            logger.error(f"Failed to start website update process: {e}")
+            try:
+                await ctx.message.remove_reaction(Emojis.RELOAD, self.bot.user)
+            except Exception:
+                pass
+            await ctx.message.add_reaction(Emojis.ERROR)
+            await ctx.reply(f"❌ **Failed to execute update script:** `{e}`", mention_author=False)
+
+
     @cmds.command(name='restart')
     @cmds.is_owner()
     async def restart(self, ctx):
