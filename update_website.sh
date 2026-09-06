@@ -11,7 +11,9 @@ fi
 echo "Pulling latest code in $WEBSITE_DIR..."
 cd "$WEBSITE_DIR"
 
-git pull origin main
+# Fetch latest commits and cleanly reset to origin/main (prevents merge conflict aborts)
+git fetch origin main
+git reset --hard origin/main
 
 echo "Installing dependencies..."
 npm install --no-audit --no-fund
