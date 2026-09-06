@@ -379,7 +379,7 @@ class Dev(cmds.Cog):
                 pass
                 
             if proc.returncode == 0:
-                await ctx.message.add_reaction(Emojis.CHECK)
+                await ctx.message.add_reaction(Emojis.SUCCESS)
                 await ctx.reply("✅ **Website updated successfully!** Live at https://spl1ceai.com", mention_author=False)
             else:
                 await ctx.message.add_reaction(Emojis.ERROR)
