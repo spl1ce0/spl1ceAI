@@ -153,7 +153,40 @@ class Model(ABC):
 
 
     async def _generate_image(self, prompt: str) -> tuple:
-        """Override in subclasses that support image generation."""
+        """Generates image using Grok Imagine (cost-optimized at $0.010), falling back to provider fallback."""
+        client = self.clients.get("grok_openai")
+        if client:
+            try:
+                logger.info(f"Generating image via Grok Imagine for prompt: {prompt}")
+                response = await client.images.generate(
+                    model="grok-imagine-image",
+                    prompt=prompt,
+                    n=1
+                )
+                if response and response.data:
+                    item = response.data[0]
+                    img_b64 = getattr(item, "b64_json", None)
+                    if img_b64:
+                        img_bytes = base64.b64decode(img_b64)
+                        return img_bytes, "generated_image.png"
+                    img_url = getattr(item, "url", None)
+                    if img_url:
+                        logger.info(f"Downloading generated image from: {img_url}")
+                        import aiohttp
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(img_url) as resp:
+                                if resp.status == 200:
+                                    img_bytes = await resp.read()
+                                    return img_bytes, "generated_image.png"
+                                else:
+                                    logger.error(f"Failed to download image: HTTP {resp.status}")
+            except Exception as e:
+                logger.error(f"Grok Imagine failed, attempting native provider fallback: {e}")
+
+        return await self._generate_image_fallback(prompt)
+
+    async def _generate_image_fallback(self, prompt: str) -> tuple:
+        """Override in subclasses that support native provider image generation as fallback."""
         return None, None
 
 class GeminiModel(Model):
@@ -222,7 +255,7 @@ class GeminiModel(Model):
         except Exception as e:
             raise AIError(f"Unexpected error in Gemini provider: {e}") from e
 
-    async def _generate_image(self, prompt: str) -> tuple:
+    async def _generate_image_fallback(self, prompt: str) -> tuple:
         client = self.clients.get("gemini")
         if not client:
             return None, None
@@ -351,7 +384,7 @@ class OpenAIModel(Model):
         except Exception as e:
             raise AIError(f"Unexpected error in OpenAI provider: {e}") from e
 
-    async def _generate_image(self, prompt: str) -> tuple:
+    async def _generate_image_fallback(self, prompt: str) -> tuple:
         client = self.clients.get("openai")
         if not client:
             return None, None
@@ -566,7 +599,7 @@ class GrokModel(Model):
             else:
                 raise AIError(f"Grok API error: {e}") from e
 
-    async def _generate_image(self, prompt: str) -> tuple:
+    async def _generate_image_fallback(self, prompt: str) -> tuple:
         client = self.clients.get("grok_openai")
         if not client:
             return None, None
@@ -773,7 +806,7 @@ class ModelManager:
             config_data = json.load(f)
             
         self.models = {}
-        self.pipeline = config_data.get("pipeline", ["gemini-3.7-flash", "gemini-3.6-flash"])
+        self.pipeline = config_data.get("pipeline", ["gemini-3.8-flash", "gemini-3.7-flash"])
         default_inst_list = config_data.get("default_instruction", [])
         default_inst = "\n".join(default_inst_list) if isinstance(default_inst_list, list) else default_inst_list
         
@@ -809,9 +842,9 @@ class ModelManager:
             if guild_settings.get("byok_fallback_model") and guild_settings["byok_fallback_model"] not in model_names:
                 model_names.append(guild_settings["byok_fallback_model"])
             if not model_names:
-                model_names = self.pipeline if self.pipeline else ["gemini-3.7-flash", "gemini-3.6-flash"]
+                model_names = self.pipeline if self.pipeline else ["gemini-3.8-flash", "gemini-3.7-flash"]
         else:
-            model_names = self.pipeline if self.pipeline else ["gemini-3.7-flash", "gemini-3.6-flash"]
+            model_names = self.pipeline if self.pipeline else ["gemini-3.8-flash", "gemini-3.7-flash"]
         
         timeout = float(guild_settings.get("llm_timeout", 15))
         

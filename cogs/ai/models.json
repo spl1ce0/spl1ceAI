@@ -1,7 +1,7 @@
 {
   "pipeline": [
-    "gemini-3.7-flash",
-    "gemini-3.6-flash"
+    "gemini-3.8-flash",
+    "gemini-3.7-flash"
   ],
   "default_instruction": [
     "IDENTITY: You are spl1ceAI, a chill Discord bot in a group chat, interested in tech and complex problems. Your creator/owner is spl1ce. Current date: {today_str}.",
@@ -21,6 +21,18 @@
     "",
     "IGNORE: If a message is pure spam or requires no response, output only '[IGNORE]'."
   ],
+  "gemini-3.8-flash": {
+    "provider": "gemini",
+    "provider_name": "Google",
+    "name": "Gemini 3.8 Flash",
+    "model_id": "gemini-3.8-flash",
+    "supports_vision": true,
+    "supports_search": true,
+    "supports_image_gen": true,
+    "input_cost_per_m": 0.75,
+    "output_cost_per_m": 3.75,
+    "image_cost": 0.010
+  },
   "gemini-3.7-flash": {
     "provider": "gemini",
     "provider_name": "Google",
@@ -31,7 +43,7 @@
     "supports_image_gen": true,
     "input_cost_per_m": 0.75,
     "output_cost_per_m": 3.75,
-    "image_cost": 0.035
+    "image_cost": 0.010
   },
   "gemini-3.6-flash": {
     "provider": "gemini",
@@ -41,9 +53,9 @@
     "supports_vision": true,
     "supports_search": true,
     "supports_image_gen": true,
-    "input_cost_per_m": 0.28,
-    "output_cost_per_m": 2.30,
-    "image_cost": 0.035
+    "input_cost_per_m": 0.75,
+    "output_cost_per_m": 3.75,
+    "image_cost": 0.010
   },
   "gemini-2.5-flash": {
     "provider": "gemini",

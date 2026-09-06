@@ -157,8 +157,8 @@ class DefaultSettings:
     PREFIX = "!"
     CBC = None
     LOG_CHANNEL = None
-    LLM_PRIMARY = "gemini-3.7-flash"
-    LLM_BACKUP1 = "gemini-3.6-flash"
+    LLM_PRIMARY = "gemini-3.8-flash"
+    LLM_BACKUP1 = "gemini-3.7-flash"
     LLM_BACKUP2 = "grok-4.3"
     LLM_BACKUP3 = "disabled"
     LLM_TIMEOUT = 15
@@ -175,8 +175,8 @@ class DefaultSettings:
     BYOK_ANTHROPIC_KEY = None
     BYOK_DEEPSEEK_KEY = None
     BYOK_GLM_KEY = None
-    BYOK_PRIMARY_MODEL = "gemini-3.7-flash"
-    BYOK_FALLBACK_MODEL = "gemini-3.6-flash"
+    BYOK_PRIMARY_MODEL = "gemini-3.8-flash"
+    BYOK_FALLBACK_MODEL = "gemini-3.7-flash"
     BYOK_ENABLED = 0
     FREE_WEEKLY_TOKEN_LIMIT = 100_000
     PREMIUM_WEEKLY_TOKEN_LIMIT = 1_000_000

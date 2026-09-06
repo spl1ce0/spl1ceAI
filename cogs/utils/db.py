@@ -58,7 +58,7 @@ class DatabaseManager:
                 "updated_at TEXT DEFAULT CURRENT_TIMESTAMP)"
             )
             await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, log_channel INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini', llm_backup1 TEXT NOT NULL DEFAULT 'gemini-3.6-flash', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15, reply_ping INTEGER NOT NULL DEFAULT 1)"
+                "CREATE TABLE IF NOT EXISTS guild_settings (guild_id INTEGER PRIMARY KEY, prefix TEXT NOT NULL DEFAULT '!', cbc INTEGER, log_channel INTEGER, llm_primary TEXT NOT NULL DEFAULT 'gemini-3.8-flash', llm_backup1 TEXT NOT NULL DEFAULT 'gemini-3.7-flash', llm_backup2 TEXT NOT NULL DEFAULT 'anthropic', llm_backup3 TEXT NOT NULL DEFAULT 'deepseek', llm_timeout INTEGER NOT NULL DEFAULT 15, reply_ping INTEGER NOT NULL DEFAULT 1)"
             )
 
             # --- Telemetry Tables ---

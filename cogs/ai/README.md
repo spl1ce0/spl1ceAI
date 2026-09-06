@@ -16,8 +16,9 @@ This package manages all Large Language Model (LLM) communications, fixed 3-tier
 
 Standard queries are automatically routed through a 2-tier pipeline defined in `models.json` (`pipeline` list):
 
-1. 🥇 **Primary Brain:** `gemini-3.7-flash` (Google) — Fast, natural human conversation with live Google Search grounding.
-2. 🥈 **Tier 2 Fallback:** `gemini-3.6-flash` (Google) — High-throughput backup with vision and search.
+1. 🥇 **Primary Brain:** `gemini-3.8-flash` (Google) — Fast, natural human conversation with live Google Search grounding.
+2. 🥈 **Tier 2 Fallback:** `gemini-3.7-flash` (Google) — High-throughput backup with vision and search.
+* 🎨 **Image Generation:** Powered by xAI Grok Imagine (`grok-imagine-image`) for ultra-fast, cost-efficient image generation.
 
 ### 🔑 Custom BYOK 2-Model Pipeline
 Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-model pipeline (Primary & Fallback) in `/settings`. The selection menu dynamically filters and displays only models matching the server's linked API keys (Gemini, xAI Grok, OpenAI, Anthropic, DeepSeek, GLM).
@@ -30,7 +31,7 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
 | :--- | :--- | :--- | :--- |
 | **Weekly Token Pool** | **100,000 tokens / week** | **1,000,000 tokens / week** | **Unlimited / Unmetered** |
 | **Reset Cycle** | Mondays 00:00 UTC | Mondays 00:00 UTC | N/A (Billed to user's key) |
-| **AI Model Brain** | `gemini-3.7-flash` | `gemini-3.7-flash` | Selected / Configured provider |
+| **AI Model Brain** | `gemini-3.8-flash` | `gemini-3.8-flash` | Selected / Configured provider |
 | **Context Window** | 5 msgs (`/ask`) • 15 msgs (chat) | 30 msgs everywhere | 30 msgs everywhere |
 | **Vision (Images)** | ❌ Disabled (Text-only) | ✅ Full image attachment analysis | ✅ Full image attachment analysis |
 | **Image Generation** | 1 image every 2 weeks | 5 images / week (20/month) | Unlimited |
