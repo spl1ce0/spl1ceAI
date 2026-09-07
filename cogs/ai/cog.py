@@ -97,12 +97,13 @@ class QuotaContainer(ui.Container):
                 f"-# Unmetered via custom API keys"
             )
         elif is_premium:
-            pct_img = min(100.0, (img_count / 5.0) * 100.0)
+            img_limit = DefaultSettings.PREMIUM_IMAGE_GEN_LIMIT_WEEKLY
+            pct_img = min(100.0, (img_count / float(img_limit)) * 100.0)
             filled_img = min(16, max(0, int(round((pct_img / 100.0) * 16))))
             bar_img = "█" * filled_img + "░" * (16 - filled_img)
             img_block = (
                 f"{bar_img}\n"
-                f"{img_count} / 5 images used ({pct_img:.0f}%)\n"
+                f"{img_count} / {img_limit} images used ({pct_img:.0f}%)\n"
                 f"-# Resets <t:{reset_ts}:R>"
             )
         else:

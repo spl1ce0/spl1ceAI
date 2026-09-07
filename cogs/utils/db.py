@@ -623,8 +623,9 @@ class DatabaseManager:
         
         if is_image:
             if is_premium:
-                if usage["image_count"] >= 5:
-                    return False, f"Server has reached the Premium weekly limit of 5 image generations (20/month). Resets <t:{usage['next_reset_ts']}:R>.", usage
+                img_limit = DefaultSettings.PREMIUM_IMAGE_GEN_LIMIT_WEEKLY
+                if usage["image_count"] >= img_limit:
+                    return False, f"Server has reached the Premium weekly limit of {img_limit} image generations (~30/month). Resets <t:{usage['next_reset_ts']}:R>.", usage
             else:
                 last_img = float(usage.get("last_image_ts", 0.0) or 0.0)
                 if last_img > 0:

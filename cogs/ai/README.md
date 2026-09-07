@@ -34,7 +34,7 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
 | **AI Model Brain** | `gemini-3.8-flash` | `gemini-3.8-flash` | Selected / Configured provider |
 | **Context Window** | 5 msgs (`/ask`) • 15 msgs (chat) | 30 msgs everywhere | 30 msgs everywhere |
 | **Vision (Images)** | ❌ Disabled (Text-only) | ✅ Full image attachment analysis | ✅ Full image attachment analysis |
-| **Image Generation** | 1 image every 2 weeks | 5 images / week (20/month) | Unlimited |
+| **Image Generation** | 1 image every 2 weeks | 7 images / week (~30/month) | Unlimited |
 | **Custom Persona** | Default `spl1ceAI` persona | Custom system prompt (via `/settings`) | Custom system prompt (via `/settings`) |
 
 ---

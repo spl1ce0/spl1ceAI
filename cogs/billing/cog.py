@@ -139,7 +139,7 @@ class PremiumContainer(ui.Container):
                 f"**2.99€ / month**\n\n"
                 f"✅ 1M tokens/week\n"
                 f"✅ 30 message context window\n"
-                f"✅ 20 image gens/month\n"
+                f"✅ 30 image gens/month\n"
                 f"✅ Websearch\n"
                 f"✅ Vision\n"
                 f"✅ Custom system instructions"
