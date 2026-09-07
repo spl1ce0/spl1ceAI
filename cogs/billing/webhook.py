@@ -18,6 +18,11 @@ class PolarWebhookServer:
         self.app.router.add_post("/webhook/billing", self.handle_webhook)
         self.app.router.add_post("/api/billing/webhook", self.handle_webhook)
         self.app.router.add_get("/health", self.handle_health)
+
+        # Mount Dashboard REST API routes (CORS, schema, settings sync)
+        from cogs.dashboard_api import setup_dashboard_routes
+        setup_dashboard_routes(self.app, self.bot)
+
         self.runner: web.AppRunner = None
         self.site: web.TCPSite = None
 
