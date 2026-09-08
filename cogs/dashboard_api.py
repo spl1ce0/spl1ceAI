@@ -227,6 +227,55 @@ async def handle_get_guild_settings(request: web.Request) -> web.Response:
     })
 
 
+async def handle_get_guild_quota(request: web.Request) -> web.Response:
+    """Fetches live AI quota telemetry for a specific guild."""
+    guild_id_str = request.match_info.get("guild_id")
+    try:
+        guild_id = int(guild_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid guild ID"}, status=400)
+
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "").strip()
+    bot = request.app["bot"]
+
+    is_allowed = await verify_user_guild_admin(token, guild_id, bot)
+    if not is_allowed:
+        return web.json_response({"error": "Unauthorized or not admin in guild"}, status=403)
+
+    settings = bot.settings_cache.get(guild_id)
+    if not settings:
+        settings = DefaultSettings.get_defaults_dict()
+
+    usage = await bot.db_manager.get_guild_weekly_ai_usage(guild_id)
+    is_premium = bool(settings.get("is_premium", 0))
+    token_limit = DefaultSettings.PREMIUM_WEEKLY_TOKEN_LIMIT if is_premium else DefaultSettings.FREE_WEEKLY_TOKEN_LIMIT
+    image_limit = DefaultSettings.PREMIUM_IMAGE_GEN_LIMIT_WEEKLY if is_premium else 1
+
+    has_byok = bool(settings.get("byok_enabled", DefaultSettings.BYOK_ENABLED)) and bool(
+        settings.get("byok_gemini_key") or
+        settings.get("byok_xai_key") or
+        settings.get("byok_openai_key") or
+        settings.get("byok_anthropic_key") or
+        settings.get("byok_deepseek_key") or
+        settings.get("byok_glm_key")
+    )
+
+    return web.json_response({
+        "success": True,
+        "token_usage": usage.get("total_tokens", 0),
+        "token_limit": token_limit,
+        "input_tokens": usage.get("input_tokens", 0),
+        "output_tokens": usage.get("output_tokens", 0),
+        "image_usage": usage.get("image_count", 0),
+        "image_limit": image_limit,
+        "next_reset_ts": usage.get("next_reset_ts"),
+        "prompt_count": usage.get("prompt_count", 0),
+        "is_premium": is_premium,
+        "has_byok": has_byok,
+    })
+
+
 async def handle_save_guild_settings(request: web.Request) -> web.Response:
     """Updates and commits settings changes to the bot's database and memory cache."""
     guild_id_str = request.match_info.get("guild_id")
@@ -357,10 +406,12 @@ def setup_dashboard_routes(app: web.Application, bot):
     app.router.add_get("/api/bot/guilds", handle_get_bot_guilds)
     app.router.add_get("/api/guilds/{guild_id}/settings", handle_get_guild_settings)
     app.router.add_post("/api/guilds/{guild_id}/settings", handle_save_guild_settings)
+    app.router.add_get("/api/guilds/{guild_id}/quota", handle_get_guild_quota)
 
     # Preflight routes
     app.router.add_route("OPTIONS", "/api/settings/schema", lambda r: web.Response(status=204))
     app.router.add_route("OPTIONS", "/api/bot/guilds", lambda r: web.Response(status=204))
     app.router.add_route("OPTIONS", "/api/guilds/{guild_id}/settings", lambda r: web.Response(status=204))
+    app.router.add_route("OPTIONS", "/api/guilds/{guild_id}/quota", lambda r: web.Response(status=204))
 
     logger.info("Dashboard REST API routes mounted successfully.")
