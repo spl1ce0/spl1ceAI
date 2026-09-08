@@ -307,17 +307,60 @@ async def handle_save_guild_settings(request: web.Request) -> web.Response:
     })
 
 
+async def handle_get_bot_guilds(request: web.Request) -> web.Response:
+    """Returns a map of all guilds the bot is currently in and their permission status."""
+    bot = request.app["bot"]
+    REQUIRED_PERMISSIONS = {
+        "view_channel": "View Channels",
+        "send_messages": "Send Messages",
+        "embed_links": "Embed Links",
+        "read_message_history": "Read Message History",
+    }
+
+    result = {}
+    for guild in getattr(bot, "guilds", []):
+        me = guild.me
+        if not me:
+            result[str(guild.id)] = {
+                "in_guild": True,
+                "has_permissions": False,
+                "missing_permissions": list(REQUIRED_PERMISSIONS.values())
+            }
+            continue
+
+        perms = me.guild_permissions
+        if perms.administrator:
+            has_perms = True
+            missing = []
+        else:
+            missing = [label for key, label in REQUIRED_PERMISSIONS.items() if not getattr(perms, key, False)]
+            has_perms = (len(missing) == 0)
+
+        result[str(guild.id)] = {
+            "in_guild": True,
+            "has_permissions": has_perms,
+            "missing_permissions": missing
+        }
+
+    return web.json_response({
+        "success": True,
+        "guilds": result
+    })
+
+
 def setup_dashboard_routes(app: web.Application, bot):
     """Mounts dashboard API routes and CORS middleware on the aiohttp application."""
     app["bot"] = bot
     app.middlewares.append(cors_middleware)
 
     app.router.add_get("/api/settings/schema", handle_settings_schema)
+    app.router.add_get("/api/bot/guilds", handle_get_bot_guilds)
     app.router.add_get("/api/guilds/{guild_id}/settings", handle_get_guild_settings)
     app.router.add_post("/api/guilds/{guild_id}/settings", handle_save_guild_settings)
 
     # Preflight routes
     app.router.add_route("OPTIONS", "/api/settings/schema", lambda r: web.Response(status=204))
+    app.router.add_route("OPTIONS", "/api/bot/guilds", lambda r: web.Response(status=204))
     app.router.add_route("OPTIONS", "/api/guilds/{guild_id}/settings", lambda r: web.Response(status=204))
 
     logger.info("Dashboard REST API routes mounted successfully.")
