@@ -186,17 +186,44 @@ async def handle_get_guild_settings(request: web.Request) -> web.Response:
         "is_premium": bool(settings.get("is_premium", 0)),
     }
 
-    # Also include available text channels if bot is in guild
+    # Also include available text channels and bot permissions if bot is in guild
     guild = bot.get_guild(guild_id)
     channels = []
+    bot_in_guild = guild is not None
+    bot_has_permissions = False
+    missing_permissions = []
+
+    REQUIRED_PERMISSIONS = {
+        "view_channel": "View Channels",
+        "send_messages": "Send Messages",
+        "embed_links": "Embed Links",
+        "read_message_history": "Read Message History",
+    }
+
     if guild:
         channels = [{"id": str(c.id), "name": c.name} for c in guild.text_channels]
+        me = guild.me
+        if me:
+            perms = me.guild_permissions
+            if perms.administrator:
+                bot_has_permissions = True
+            else:
+                for perm_attr, perm_name in REQUIRED_PERMISSIONS.items():
+                    if not getattr(perms, perm_attr, False):
+                        missing_permissions.append(perm_name)
+                bot_has_permissions = (len(missing_permissions) == 0)
+        else:
+            bot_has_permissions = True
+    else:
+        missing_permissions = list(REQUIRED_PERMISSIONS.values())
 
     return web.json_response({
         "success": True,
         "settings": data,
         "channels": channels,
-        "bot_in_guild": guild is not None
+        "bot_in_guild": bot_in_guild,
+        "bot_has_permissions": bot_has_permissions,
+        "missing_permissions": missing_permissions
     })
 
 
