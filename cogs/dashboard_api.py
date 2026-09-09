@@ -29,11 +29,33 @@ async def cors_middleware(request: web.Request, handler):
 
 
 async def verify_user_guild_admin(token: str, guild_id: int, bot) -> bool:
-    """Verifies that the user holding the Discord OAuth2 bearer token has Administrator or Manage Guild permissions."""
+    """Verifies that the user holding the Discord OAuth2 bearer token has Administrator or Manage Guild permissions, or is the bot owner."""
     if not token:
         return False
 
     try:
+        # Check if the user is the bot owner
+        try:
+            async with bot.web_client.get(
+                "https://discord.com/api/v10/users/@me",
+                headers={"Authorization": f"Bearer {token}"}
+            ) as me_resp:
+                if me_resp.status == 200:
+                    user_info = await me_resp.json()
+                    user_id = int(user_info.get("id", 0))
+                    if getattr(bot, "owner_id", None) and user_id == bot.owner_id:
+                        return True
+                    if getattr(bot, "owner_ids", None) and user_id in bot.owner_ids:
+                        return True
+                    if hasattr(bot, "is_owner"):
+                        try:
+                            if await bot.is_owner(discord.Object(id=user_id)):
+                                return True
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.debug(f"Bot owner check failed: {e}")
+
         # Check through Discord API using user's bearer token
         async with bot.web_client.get(
             "https://discord.com/api/v10/users/@me/guilds",
@@ -54,6 +76,27 @@ async def verify_user_guild_admin(token: str, guild_id: int, bot) -> bool:
     except Exception as e:
         logger.error(f"Error validating user guild permissions: {e}")
         return False
+
+
+async def get_guild_settings_dict(bot, guild_id: int) -> dict:
+    """Retrieves live settings for a guild, ensuring sync with SQLite database."""
+    try:
+        async with bot.db.cursor() as cursor:
+            await cursor.execute("SELECT * FROM guild_settings WHERE guild_id = ?", (guild_id,))
+            row = await cursor.fetchone()
+            if row:
+                data = dict(row)
+                data.pop("guild_id", None)
+                bot.settings_cache[guild_id] = data
+                return data
+    except Exception as e:
+        logger.error(f"Error fetching settings for guild {guild_id} from DB: {e}")
+
+    settings = bot.settings_cache.get(guild_id)
+    if not settings:
+        settings = DefaultSettings.get_defaults_dict()
+        bot.settings_cache[guild_id] = settings
+    return settings
 
 
 async def handle_settings_schema(request: web.Request) -> web.Response:
@@ -159,9 +202,7 @@ async def handle_get_guild_settings(request: web.Request) -> web.Response:
     if not is_allowed:
         return web.json_response({"error": "Unauthorized or not admin in guild"}, status=403)
 
-    settings = bot.settings_cache.get(guild_id)
-    if not settings:
-        settings = DefaultSettings.get_defaults_dict()
+    settings = await get_guild_settings_dict(bot, guild_id)
 
     # Formatted response for frontend consumption
     data = {
@@ -243,9 +284,7 @@ async def handle_get_guild_quota(request: web.Request) -> web.Response:
     if not is_allowed:
         return web.json_response({"error": "Unauthorized or not admin in guild"}, status=403)
 
-    settings = bot.settings_cache.get(guild_id)
-    if not settings:
-        settings = DefaultSettings.get_defaults_dict()
+    settings = await get_guild_settings_dict(bot, guild_id)
 
     usage = await bot.db_manager.get_guild_weekly_ai_usage(guild_id)
     is_premium = bool(settings.get("is_premium", 0))
