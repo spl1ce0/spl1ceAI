@@ -532,13 +532,19 @@ class LogsSettingsContainer(ui.Container):
     async def log_toggle(self, interaction: discord.Interaction):
         current_log = self.guild_settings.get("log_channel")
         if current_log is None:
-            default = next((ch.id for ch in self.guild.channels if isinstance(ch, discord.TextChannel)), None)
+            default = next((ch.id for ch in self.guild.text_channels if ch.permissions_for(self.guild.me).send_messages), None)
+            if not default:
+                default = next((ch.id for ch in self.guild.channels if isinstance(ch, discord.TextChannel)), None)
             new_log = default
         else:
             new_log = None
 
         await self.bot.db_manager.update_guild_setting(self.guild.id, "log_channel", new_log)
         await self.bot.db_manager.log_settings_change(self.guild.id, interaction.user.id, "log_channel", str(current_log), str(new_log))
+
+        self.bot.settings_cache.setdefault(self.guild.id, {})["log_channel"] = new_log
+        self.guild_settings["log_channel"] = new_log
+        self.parent_view.guild_settings["log_channel"] = new_log
 
         self.parent_view.render_logs(log_page=self.log_page)
         await interaction.response.edit_message(view=self.parent_view)
