@@ -42,7 +42,7 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
 ## 🎯 Message Trigger Mechanics
 
 1. **Inside ChatBot Channel (`cbc`)**:
-   * Automatically replies **only to direct @mentions and message replies to the bot**. Unrelated channel chatter is ignored.
+   * Automatically replies **only to direct @mentions and message replies to the bot**. Unrelated channel chatter, system messages (e.g. pinned message notifications, boosts, member joins), and empty messages are strictly ignored.
 2. **Outside ChatBot Channel**:
    * The bot remains completely idle unless an admin or user runs `/summon` (starts an active listening session that replies to mentions/replies) or a user invokes the explicit `/ask` command.
 
@@ -52,11 +52,13 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
 
 ### 1. `ModelManager`
 * Central router for all AI execution requests.
-* Executes the 3-tier disaster pipeline sequentially within an `asyncio.wait_for` timeout window.
+* Executes the disaster pipeline sequentially within an `asyncio.wait_for` timeout window.
 * Automatically injects custom server prompts when enabled.
+* Generates responses up to `DEFAULT_MAX_OUTPUT_TOKENS` (2,048 tokens).
 
 ### 2. `ContextManager`
 * Extracts and standardizes conversation history with tier-aware depth (5, 15, or 30 messages) and active session age cutoff (45-minute recency window).
+* Resolves users to server members (`discord.Member`) to accurately read guild-specific nicknames and server display names rather than generic global handles.
 * Non-duplicative reply referencing (`[User] (replying to Target): message`) avoiding redundant quote token burn.
 * Multimodal payload ingestion with `enable_vision` flag:
   * **Images**: Reads raw bytes and attaches mime types for visual models when vision is enabled (Premium & BYOK).
@@ -64,4 +66,6 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
   * **Recent History Attachment Limit (`HISTORY_ATTACHMENT_LIMIT = 3`)**: Automatically scans the last 3 history messages for attachments when vision is active.
 
 ### 3. `ResponseHandler`
-* Manages formatting, rich footer subtext injection (modular `footer_show_*` toggles with custom provider emoji, execution latency, and token consumption), hard 800-token completion limits (preventing runaway token burn), and Discord reply routing.
+* Manages formatting, intelligent markdown-aware message chunking (`split_text_into_chunks`) with code block fence preservation to cleanly deliver responses exceeding Discord's 2,000-character limit across sequential messages without truncation.
+* Attaches rich footer subtext to the final message chunk (modular `footer_show_*` toggles with provider emoji, execution latency, and token consumption).
+* Discord reply routing for both interactions and messages.

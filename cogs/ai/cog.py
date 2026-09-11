@@ -307,6 +307,8 @@ class AI(commands.Cog):
     async def _get_chat_history(self, ctx: commands.Context, channel_id: int, message_count: int, max_age_minutes: typing.Optional[int] = 45) -> list:
         message_list = []
         channel = await commands.TextChannelConverter().convert(ctx, str(channel_id))
+        guild = getattr(channel, "guild", getattr(ctx, "guild", None))
+        member_cache = {}
         now = discord.utils.utcnow()
         try:
             async for message in channel.history(limit=message_count):
@@ -314,6 +316,37 @@ class AI(commands.Cog):
                     age_mins = (now - message.created_at).total_seconds() / 60.0
                     if age_mins > max_age_minutes:
                         break
+
+                # Resolve message.author to discord.Member so server nickname / display name is used
+                if guild and message.author and not isinstance(message.author, discord.Member):
+                    author_id = message.author.id
+                    if author_id not in member_cache:
+                        member = guild.get_member(author_id)
+                        if not member:
+                            try:
+                                member = await guild.fetch_member(author_id)
+                            except Exception:
+                                member = None
+                        member_cache[author_id] = member
+                    if member_cache.get(author_id):
+                        message.author = member_cache[author_id]
+
+                # Resolve reply reference author if present
+                if guild and message.reference and message.reference.resolved:
+                    ref_msg = message.reference.resolved
+                    if isinstance(ref_msg, discord.Message) and ref_msg.author and not isinstance(ref_msg.author, discord.Member):
+                        ref_id = ref_msg.author.id
+                        if ref_id not in member_cache:
+                            m = guild.get_member(ref_id)
+                            if not m:
+                                try:
+                                    m = await guild.fetch_member(ref_id)
+                                except Exception:
+                                    m = None
+                            member_cache[ref_id] = m
+                        if member_cache.get(ref_id):
+                            ref_msg.author = member_cache[ref_id]
+
                 message_list.append(message)
         except Exception as e:
             logger.error(f"Failed to get message history: {e}")
@@ -348,7 +381,7 @@ class AI(commands.Cog):
             return
 
         message_list.reverse()
-        formatted_context = ContextManager.format_history(message_list)
+        formatted_context = ContextManager.format_history(message_list, guild=ctx.guild)
 
         prompt = f"Summarize the following Discord conversation concisely. Use bullet points for key topics. Keep it brief and avoid unnecessary detail:\n\n{formatted_context}"
 
@@ -415,13 +448,20 @@ class AI(commands.Cog):
         msg = ctx.message if hasattr(ctx, 'message') else None
         slash_attachments = [image] if image else None
         
+        # Resolve server user name (server nickname / server display name)
+        author = ctx.author
+        if ctx.guild and not isinstance(author, discord.Member):
+            author = ctx.guild.get_member(author.id) or author
+        user_name = getattr(author, "display_name", str(author))
+
         contents = await ContextManager.prepare_contents(
             msg,
             message_list,
-            f"Reply to the user's question from {ctx.author.display_name}: {question}",
+            f"Reply to the user's question from {user_name}: {question}",
             slash_attachments=slash_attachments,
             enable_vision=enable_vision,
-            bot_user=self.bot.user
+            bot_user=self.bot.user,
+            guild=ctx.guild
         )
 
         logger.info(f"ask command trigger: contents contains {len(contents)} items (vision={enable_vision}, history={len(message_list)})")
@@ -499,6 +539,10 @@ class AI(commands.Cog):
 
 
     async def _parse_message_triggers(self, message: discord.Message) -> tuple:
+        # Ignore system messages (pins, boosts, etc.)
+        if message.is_system() or message.type not in (discord.MessageType.default, discord.MessageType.reply):
+            return False, False, False
+
         channel_id = message.channel.id
         guild_id = message.guild.id if message.guild else None
         
@@ -590,8 +634,20 @@ class AI(commands.Cog):
                 message_list = [msg for msg in message_list if msg.id != message.id]
                 message_list.reverse()
                 
-                prompt = f"Reply to this message from {message.author.display_name}: {message.content}"
-                contents = await ContextManager.prepare_contents(message, message_list, prompt, enable_vision=enable_vision, bot_user=self.bot.user)
+                author = message.author
+                if message.guild and not isinstance(author, discord.Member):
+                    author = message.guild.get_member(author.id) or author
+                user_name = getattr(author, "display_name", str(author))
+
+                prompt = f"Reply to this message from {user_name}: {message.content}"
+                contents = await ContextManager.prepare_contents(
+                    message, 
+                    message_list, 
+                    prompt, 
+                    enable_vision=enable_vision, 
+                    bot_user=self.bot.user,
+                    guild=message.guild
+                )
 
                 logger.info(f"on_message trigger: contents contains {len(contents)} items (vision={enable_vision}, history={len(message_list)})")
 
@@ -686,6 +742,14 @@ class AI(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
+            return
+
+        # Ignore system messages (pin notifications, member joins, boosts, thread starters, etc.)
+        if message.is_system() or message.type not in (discord.MessageType.default, discord.MessageType.reply):
+            return
+
+        # Ignore messages with no text content and no attachments
+        if not (message.content and message.content.strip()) and not message.attachments:
             return
 
         # Ignore blacklisted users globally

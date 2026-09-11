@@ -219,7 +219,7 @@ class GeminiModel(Model):
             config = types.GenerateContentConfig(
                 system_instruction=self._get_system_instructions(custom_prompt),
                 tools=config_tools,
-                max_output_tokens=800
+                max_output_tokens=DefaultSettings.DEFAULT_MAX_OUTPUT_TOKENS
             )
             
             gemini_contents = []
@@ -358,7 +358,7 @@ class OpenAIModel(Model):
                 response = await client.chat.completions.create(
                     model=self.model_id,
                     messages=messages,
-                    max_completion_tokens=800,
+                    max_completion_tokens=DefaultSettings.DEFAULT_MAX_OUTPUT_TOKENS,
                     temperature=0.6
                 )
                 text = response.choices[0].message.content
@@ -488,7 +488,7 @@ class AnthropicModel(Model):
                 model=self.model_id,
                 system=self._get_system_instructions(custom_prompt),
                 messages=messages,
-                max_tokens=800,
+                max_tokens=DefaultSettings.DEFAULT_MAX_OUTPUT_TOKENS,
                 temperature=0.6,
                 tools=config_tools if config_tools else None
             )
@@ -538,7 +538,7 @@ class GrokModel(Model):
                 response = await client.chat.completions.create(
                     model=self.model_id,
                     messages=messages,
-                    max_completion_tokens=800,
+                    max_completion_tokens=DefaultSettings.DEFAULT_MAX_OUTPUT_TOKENS,
                     temperature=0.6
                 )
                 text = response.choices[0].message.content
@@ -658,7 +658,7 @@ class DeepSeekModel(OpenAIModel):
             response = await client.chat.completions.create(
                 model=self.model_id,
                 messages=messages,
-                max_completion_tokens=800,
+                max_completion_tokens=DefaultSettings.DEFAULT_MAX_OUTPUT_TOKENS,
                 temperature=0.6
             )
             text = response.choices[0].message.content
@@ -704,7 +704,7 @@ class GLMModel(OpenAIModel):
             response = await client.chat.completions.create(
                 model=self.model_id,
                 messages=messages,
-                max_completion_tokens=800,
+                max_completion_tokens=DefaultSettings.DEFAULT_MAX_OUTPUT_TOKENS,
                 temperature=0.6
             )
             text = response.choices[0].message.content
@@ -935,18 +935,30 @@ class ContextManager:
         return 'image/jpeg'
 
     @classmethod
-    def format_history(cls, message_list: list, bot_user: typing.Optional[typing.Union[discord.User, discord.ClientUser]] = None) -> str:
+    def format_history(
+        cls, 
+        message_list: list, 
+        bot_user: typing.Optional[typing.Union[discord.User, discord.ClientUser]] = None,
+        guild: typing.Optional[discord.Guild] = None
+    ) -> str:
         result = []
         bot_id = bot_user.id if bot_user else None
-        bot_name = getattr(bot_user, "display_name", "spl1ceAI") if bot_user else "spl1ceAI"
+        
+        bot_member = guild.get_member(bot_id) if (guild and bot_id) else None
+        bot_name = getattr(bot_member, "display_name", None) or (getattr(bot_user, "display_name", "spl1ceAI") if bot_user else "spl1ceAI")
         
         for message in message_list:
-            author_id = getattr(message.author, "id", None)
-            sender = getattr(message.author, "display_name", str(message.author))
+            author = message.author
+            author_id = getattr(author, "id", None)
+            msg_guild = getattr(message, "guild", guild)
+            if msg_guild and author_id and not isinstance(author, discord.Member):
+                author = msg_guild.get_member(author_id) or author
+                
+            sender = getattr(author, "display_name", str(author))
             content = message.content or ""
             
             # Explicitly mark bot's own past responses vs other human users
-            is_self = (author_id == bot_id) if bot_id else getattr(message.author, "bot", False)
+            is_self = (author_id == bot_id) if bot_id else getattr(author, "bot", False)
             speaker_tag = f"You ({bot_name})" if is_self else f"User: {sender}"
             
             attachments_str = ""
@@ -963,8 +975,12 @@ class ContextManager:
             if message.reference is not None:
                 ref_message = message.reference.resolved
                 if ref_message is not None and not isinstance(ref_message, discord.DeletedReferencedMessage): 
-                    ref_author = getattr(ref_message.author, "display_name", str(ref_message.author))
-                    reply_note = f" (replying to {ref_author})"
+                    ref_author = ref_message.author
+                    ref_author_id = getattr(ref_author, "id", None)
+                    if msg_guild and ref_author_id and not isinstance(ref_author, discord.Member):
+                        ref_author = msg_guild.get_member(ref_author_id) or ref_author
+                    ref_name = getattr(ref_author, "display_name", str(ref_author))
+                    reply_note = f" (replying to {ref_name})"
             
             msg_text = (content + attachments_str).strip()
             if msg_text:
@@ -972,7 +988,16 @@ class ContextManager:
         return "\n".join(result)
 
     @classmethod
-    async def prepare_contents(cls, message: discord.Message, history: list, prompt: str, slash_attachments: list = None, enable_vision: bool = True, bot_user: typing.Optional[typing.Union[discord.User, discord.ClientUser]] = None) -> list:
+    async def prepare_contents(
+        cls, 
+        message: discord.Message, 
+        history: list, 
+        prompt: str, 
+        slash_attachments: list = None, 
+        enable_vision: bool = True, 
+        bot_user: typing.Optional[typing.Union[discord.User, discord.ClientUser]] = None,
+        guild: typing.Optional[discord.Guild] = None
+    ) -> list:
         contents = []
         processed_ids = set()
         
@@ -1037,7 +1062,8 @@ class ContextManager:
                     logger.error(f"Failed to read text attachment {att.filename}: {e}")
                     
         # 3. Add the formatted context and prompt with clean structure
-        formatted_history = cls.format_history(history, bot_user=bot_user)
+        guild_obj = guild or (getattr(message, "guild", None) if message else None)
+        formatted_history = cls.format_history(history, bot_user=bot_user, guild=guild_obj)
         if formatted_history:
             full_prompt = (
                 f"<conversation_history>\n"
@@ -1056,6 +1082,42 @@ class ResponseHandler:
     """Manages output formatting, character limit enforcement, and Discord reply delivery."""
     def __init__(self, bot=None):
         self.bot = bot
+
+    @staticmethod
+    def split_text_into_chunks(text: str, max_chunk_len: int = 1950) -> list:
+        if not text:
+            return []
+        if len(text) <= max_chunk_len:
+            return [text]
+
+        chunks = []
+        current = text
+        while len(current) > max_chunk_len:
+            split_at = -1
+            for sep in ["\n\n", "\n", ". ", " "]:
+                pos = current.rfind(sep, 0, max_chunk_len)
+                if pos > max_chunk_len // 3:
+                    split_at = pos + len(sep)
+                    break
+            if split_at == -1:
+                split_at = max_chunk_len
+
+            chunk = current[:split_at].rstrip()
+            current = current[split_at:].lstrip()
+
+            # Preserve code block formatting across chunks
+            if chunk.count("```") % 2 != 0:
+                last_fence = chunk.rfind("```")
+                lang = chunk[last_fence + 3:].split("\n", 1)[0].strip()
+                chunk = chunk + "\n```"
+                current = f"```{lang}\n" + current
+
+            if chunk:
+                chunks.append(chunk)
+
+        if current:
+            chunks.append(current)
+        return chunks
 
     async def orchestrate_reply(self, message_or_ctx, response: AIResponse):
         if response.text and "[IGNORE]" in response.text:
@@ -1138,11 +1200,33 @@ class ResponseHandler:
 
             footer_text = " • ".join(parts)
             suffix = f"\n-# {footer_text}" if footer_text else ""
-            max_body = 2000 - len(suffix)
-            if len(clean_text) > max_body:
-                clean_text = clean_text[:max_body - 3] + "..."
-            clean_text = f"{clean_text}{suffix}"
 
-            await message_or_ctx.reply(clean_text, file=file, mention_author=reply_ping)
+            # Split text into chunks that safely fit Discord's 2000-character limit
+            chunks = self.split_text_into_chunks(clean_text, max_chunk_len=1950)
+            if not chunks:
+                chunks = [clean_text]
+
+            # Ensure the final chunk has enough room for the footer suffix
+            if len(chunks[-1]) + len(suffix) > 2000:
+                last_chunk = chunks.pop()
+                sub_chunks = self.split_text_into_chunks(last_chunk, max_chunk_len=max(100, 2000 - len(suffix) - 10))
+                chunks.extend(sub_chunks)
+
+            # Cap total chunks to prevent runaway spam in extreme cases
+            if len(chunks) > 5:
+                chunks = chunks[:5]
+                chunks[-1] = chunks[-1] + "\n-# *(Response truncated due to length)*"
+
+            chunks[-1] = f"{chunks[-1]}{suffix}"
+
+            # Deliver chunks cleanly without dropping any message content
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await message_or_ctx.reply(chunk, file=file, mention_author=reply_ping)
+                else:
+                    if hasattr(message_or_ctx, "channel"):
+                        await message_or_ctx.channel.send(chunk)
+                    else:
+                        await message_or_ctx.send(chunk)
         elif file:
             await message_or_ctx.reply(file=file, mention_author=reply_ping)
