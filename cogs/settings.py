@@ -527,12 +527,12 @@ class SystemInstructionsContainer(ui.Container):
             if len(preview) > 1500:
                 preview = preview[:1500] + "..."
             showcase_text = (
-                f"**Current Instructions:**\n"
+                f"**Current instructions**\n"
                 f"```{preview}```"
             )
         else:
             showcase_text = (
-                f"**Current Instructions:**\n"
+                f"**Current instructions**\n"
                 f"-# *No custom instructions set (using default spl1ceAI persona).*"
             )
 
@@ -540,10 +540,7 @@ class SystemInstructionsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # Section 2: Edit button section
-        edit_display = ui.TextDisplay(
-            f"**System instructions**\n"
-            f"-# Set custom system instructions or guidelines for the AI."
-        )
+        edit_display = ui.TextDisplay("**Change instructions**")
         edit_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         edit_button.callback = self._on_edit
         self.add_item(ui.Section(edit_display, accessory=edit_button))
