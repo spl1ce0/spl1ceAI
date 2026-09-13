@@ -170,7 +170,7 @@ class BYOKModal(ui.Modal, title="Link Custom API Keys"):
 # =========================================================================
 
 class CBCSelect(ui.Select):
-    PAGE_SIZE = 23
+    PAGE_SIZE = 21
 
     def __init__(self, guild: discord.Guild, bot, selected_id=None, page: int = 0):
         self.guild = guild
@@ -184,12 +184,25 @@ class CBCSelect(ui.Select):
         end_idx = start_idx + self.PAGE_SIZE
         page_channels = text_channels[start_idx:end_idx]
 
+        selected_ch = guild.get_channel(selected_id) if selected_id else None
+        placeholder = f"#{selected_ch.name}"[:100] if selected_ch else "Select ChatBot channel..."
+
         options = []
         if page > 0:
             options.append(discord.SelectOption(
                 label=f"< Previous ({page}/{((total_channels-1)//self.PAGE_SIZE)+1})",
                 value="action_prev_page",
                 description="View previous page"
+            ))
+
+        has_selected_on_page = any(ch.id == selected_id for ch in page_channels)
+        if selected_ch and not has_selected_on_page:
+            cat_name = selected_ch.category.name[:90] if selected_ch.category else "No Category"
+            options.append(discord.SelectOption(
+                label=f"#{selected_ch.name}"[:100],
+                value=str(selected_ch.id),
+                default=True,
+                description=f"Current • {cat_name}"[:100]
             ))
 
         for ch in page_channels:
@@ -212,7 +225,7 @@ class CBCSelect(ui.Select):
         if not options:
             options.append(discord.SelectOption(label="No text channels available", value="none"))
 
-        super().__init__(placeholder="Select ChatBot channel...", options=options, row=0)
+        super().__init__(placeholder=placeholder, options=options, row=0)
 
     async def callback(self, interaction: discord.Interaction):
         selected_val = self.values[0]
@@ -244,7 +257,7 @@ class CBCSelect(ui.Select):
 
 
 class LogChannelSelect(ui.Select):
-    PAGE_SIZE = 23
+    PAGE_SIZE = 21
 
     def __init__(self, guild: discord.Guild, bot, selected_id=None, page: int = 0):
         self.guild = guild
@@ -258,12 +271,25 @@ class LogChannelSelect(ui.Select):
         end_idx = start_idx + self.PAGE_SIZE
         page_channels = text_channels[start_idx:end_idx]
 
+        selected_ch = guild.get_channel(selected_id) if selected_id else None
+        placeholder = f"#{selected_ch.name}"[:100] if selected_ch else "Select Chat Logs channel..."
+
         options = []
         if page > 0:
             options.append(discord.SelectOption(
                 label=f"< Previous ({page}/{((total_channels-1)//self.PAGE_SIZE)+1})",
                 value="action_prev_page",
                 description="View previous page"
+            ))
+
+        has_selected_on_page = any(ch.id == selected_id for ch in page_channels)
+        if selected_ch and not has_selected_on_page:
+            cat_name = selected_ch.category.name[:90] if selected_ch.category else "No Category"
+            options.append(discord.SelectOption(
+                label=f"#{selected_ch.name}"[:100],
+                value=str(selected_ch.id),
+                default=True,
+                description=f"Current • {cat_name}"[:100]
             ))
 
         for ch in page_channels:
@@ -286,7 +312,7 @@ class LogChannelSelect(ui.Select):
         if not options:
             options.append(discord.SelectOption(label="No text channels available", value="none"))
 
-        super().__init__(placeholder="Select Chat Logs channel...", options=options, row=0)
+        super().__init__(placeholder=placeholder, options=options, row=0)
 
     async def callback(self, interaction: discord.Interaction):
         selected_val = self.values[0]
@@ -369,12 +395,25 @@ def get_model_emoji(model_id: str) -> str:
 
 
 class AISettingsContainer(ui.Container):
-    def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view, cbc_page: int = 0):
+    def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view, cbc_page: Optional[int] = None):
         super().__init__()
         self.guild_settings = guild_settings
         self.guild = guild
         self.bot = bot
         self.parent_view = parent_view
+
+        cbc = self.guild_settings.get("cbc")
+        if cbc_page is None:
+            if cbc:
+                text_channels = [ch for ch in guild.channels if isinstance(ch, discord.TextChannel)]
+                try:
+                    idx = next(i for i, ch in enumerate(text_channels) if ch.id == cbc)
+                    cbc_page = idx // CBCSelect.PAGE_SIZE
+                except StopIteration:
+                    cbc_page = 0
+            else:
+                cbc_page = 0
+
         self.cbc_page = cbc_page
         self._make_container()
 
@@ -468,7 +507,7 @@ class AISettingsContainer(ui.Container):
         self.bot.settings_cache.setdefault(self.guild.id, {})["cbc"] = new_cbc
         self.guild_settings["cbc"] = new_cbc
 
-        self.parent_view.render_ai(cbc_page=self.cbc_page)
+        self.parent_view.render_ai(cbc_page=None)
         await interaction.response.edit_message(view=self.parent_view)
 
     async def prompt_submenu_open(self, interaction: discord.Interaction):
@@ -559,12 +598,25 @@ class SystemInstructionsContainer(ui.Container):
 
 
 class LogsSettingsContainer(ui.Container):
-    def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view, log_page: int = 0):
+    def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view, log_page: Optional[int] = None):
         super().__init__()
         self.guild_settings = guild_settings
         self.guild = guild
         self.bot = bot
         self.parent_view = parent_view
+
+        log_channel = self.guild_settings.get("log_channel")
+        if log_page is None:
+            if log_channel:
+                text_channels = [ch for ch in guild.channels if isinstance(ch, discord.TextChannel)]
+                try:
+                    idx = next(i for i, ch in enumerate(text_channels) if ch.id == log_channel)
+                    log_page = idx // LogChannelSelect.PAGE_SIZE
+                except StopIteration:
+                    log_page = 0
+            else:
+                log_page = 0
+
         self.log_page = log_page
         self._make_container()
 
@@ -608,7 +660,7 @@ class LogsSettingsContainer(ui.Container):
         self.guild_settings["log_channel"] = new_log
         self.parent_view.guild_settings["log_channel"] = new_log
 
-        self.parent_view.render_logs(log_page=self.log_page)
+        self.parent_view.render_logs(log_page=None)
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -1118,7 +1170,7 @@ class SettingsView(ui.LayoutView):
         container = GeneralSettingsContainer(self.guild_settings, self.guild, self.bot, self)
         self.add_item(container)
 
-    def render_ai(self, cbc_page: int = 0):
+    def render_ai(self, cbc_page: Optional[int] = None):
         self.clear_items()
         container = AISettingsContainer(self.guild_settings, self.guild, self.bot, self, cbc_page=cbc_page)
         self.add_item(container)
@@ -1138,7 +1190,7 @@ class SettingsView(ui.LayoutView):
         container = BYOKSettingsContainer(self.guild_settings, self.guild, self.bot, self)
         self.add_item(container)
 
-    def render_logs(self, log_page: int = 0):
+    def render_logs(self, log_page: Optional[int] = None):
         self.clear_items()
         container = LogsSettingsContainer(self.guild_settings, self.guild, self.bot, self, log_page=log_page)
         self.add_item(container)
