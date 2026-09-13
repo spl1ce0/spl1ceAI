@@ -100,7 +100,22 @@ class Spl1ceAI(commands.AutoShardedBot):
                 
                 end_time = time.time()
                 duration = end_time - data['start_time']
-                await channel.send(f"🚀 Back online! Boot time: `{duration:.2f}s`", reference=message)
+
+                action = data.get('action', 'restart')
+                if action == 'update':
+                    confirmation_text = f"✅ **Bot updated successfully!** Back online in `{duration:.2f}s`"
+                else:
+                    confirmation_text = f"🚀 Back online! Boot time: `{duration:.2f}s`"
+
+                status_msg_id = data.get('status_message_id')
+                if status_msg_id:
+                    try:
+                        status_msg = await channel.fetch_message(status_msg_id)
+                        await status_msg.edit(content=confirmation_text)
+                    except Exception:
+                        await channel.send(confirmation_text, reference=message)
+                else:
+                    await channel.send(confirmation_text, reference=message)
             except Exception as e:
                 log.error(f"Failed to react to restart message: {e}")
 

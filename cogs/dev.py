@@ -339,32 +339,48 @@ class Dev(cmds.Cog):
 
 
 
-    @cmds.command(name='update')
+    @cmds.group(name='update', invoke_without_command=True)
     @cmds.is_owner()
-    async def update(self, ctx):
-        """Runs the update.sh script to update the bot."""
+    async def update(self, ctx: Context):
+        """Update system components (bot or website)."""
+        await ctx.reply("ℹ️ **Specify a target to update:** `!update bot` or `!update web`", mention_author=False)
+
+
+    @update.command(name='bot', aliases=['core', 'app'])
+    @cmds.is_owner()
+    async def update_bot(self, ctx: Context):
+        """Runs the update.sh script to pull latest changes and restart the bot."""
         await ctx.message.add_reaction(Emojis.RELOAD)
-        
+        status_msg = await ctx.reply("🔄 **Updating bot...** Pulling latest code and dependencies.", mention_author=False)
+
         data = {
             'channel_id': ctx.channel.id,
             'message_id': ctx.message.id,
+            'status_message_id': status_msg.id,
+            'action': 'update',
             'start_time': time.time()
         }
         await self.bot.db_manager.save_system_state('restart_info', json.dumps(data))
-            
+
         try:
             await asyncio.create_subprocess_exec('./update.sh')
         except Exception as e:
             logger.error(f"Failed to start update process: {e}")
+            try:
+                await ctx.message.remove_reaction(Emojis.RELOAD, self.bot.user)
+            except Exception:
+                pass
             await ctx.message.add_reaction(Emojis.ERROR)
+            await status_msg.edit(content=f"❌ **Failed to execute update script:** `{e}`")
 
 
-    @cmds.command(name='update_web', aliases=['updateweb', 'update_site'])
+    @update.command(name='web', aliases=['website', 'site'])
     @cmds.is_owner()
-    async def update_web(self, ctx):
+    async def update_web(self, ctx: Context):
         """Runs the update_website.sh script to pull and rebuild the website."""
         await ctx.message.add_reaction(Emojis.RELOAD)
-        
+        status_msg = await ctx.reply("🔄 **Updating website...** Pulling latest code and rebuilding bundle.", mention_author=False)
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 './update_website.sh',
@@ -372,19 +388,19 @@ class Dev(cmds.Cog):
                 stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await proc.communicate()
-            
+
             try:
                 await ctx.message.remove_reaction(Emojis.RELOAD, self.bot.user)
             except Exception:
                 pass
-                
+
             if proc.returncode == 0:
                 await ctx.message.add_reaction(Emojis.SUCCESS)
-                await ctx.reply("✅ **Website updated successfully!** Live at https://spl1ceai.com", mention_author=False)
+                await status_msg.edit(content="✅ **Website updated successfully!** Live at https://spl1ceai.com")
             else:
                 await ctx.message.add_reaction(Emojis.ERROR)
                 err_msg = (stderr or stdout).decode()[-1000:]
-                await ctx.reply(f"❌ **Website update failed:**\n```\n{err_msg}\n```", mention_author=False)
+                await status_msg.edit(content=f"❌ **Website update failed:**\n```\n{err_msg}\n```")
         except Exception as e:
             logger.error(f"Failed to start website update process: {e}")
             try:
@@ -392,7 +408,7 @@ class Dev(cmds.Cog):
             except Exception:
                 pass
             await ctx.message.add_reaction(Emojis.ERROR)
-            await ctx.reply(f"❌ **Failed to execute update script:** `{e}`", mention_author=False)
+            await status_msg.edit(content=f"❌ **Failed to execute update script:** `{e}`")
 
 
     @cmds.command(name='restart')
