@@ -78,7 +78,7 @@ class CustomPromptModal(ui.Modal, title="System instructions"):
         self.parent_view.bot.settings_cache.setdefault(self.guild_id, {})["custom_prompt"] = new_prompt
         self.parent_view.guild_settings["custom_prompt"] = new_prompt
 
-        self.parent_view.render_ai()
+        self.parent_view.render_prompt_settings()
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -194,11 +194,12 @@ class CBCSelect(ui.Select):
 
         for ch in page_channels:
             is_default = (ch.id == selected_id)
+            category_name = ch.category.name[:100] if ch.category else "No Category"
             options.append(discord.SelectOption(
                 label=f"#{ch.name}"[:100],
                 value=str(ch.id),
                 default=is_default,
-                description=f"ID: {ch.id}"
+                description=category_name
             ))
 
         if end_idx < total_channels:
@@ -416,8 +417,8 @@ class AISettingsContainer(ui.Container):
             f"**System instructions**\n"
             f"-# Set custom system instructions or guidelines for the AI."
         )
-        prompt_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
-        prompt_button.callback = self.custom_prompt_configure
+        prompt_button = ui.Button(emoji=Emojis.ARROW, style=discord.ButtonStyle.gray)
+        prompt_button.callback = self.prompt_submenu_open
         self.add_item(ui.Section(prompt_display, accessory=prompt_button))
         self.add_item(ui.Separator())
 
@@ -469,9 +470,13 @@ class AISettingsContainer(ui.Container):
         self.parent_view.render_ai(cbc_page=self.cbc_page)
         await interaction.response.edit_message(view=self.parent_view)
 
+    async def prompt_submenu_open(self, interaction: discord.Interaction):
+        self.parent_view.render_prompt_settings()
+        await interaction.response.edit_message(view=self.parent_view)
+
     async def custom_prompt_configure(self, interaction: discord.Interaction):
-        current_prompt = self.guild_settings.get("custom_prompt")
-        await interaction.response.send_modal(CustomPromptModal(current_prompt, self.guild.id, self.parent_view))
+        self.parent_view.render_prompt_settings()
+        await interaction.response.edit_message(view=self.parent_view)
 
     async def byok_submenu_open(self, interaction: discord.Interaction):
         self.parent_view.render_byok_settings()
@@ -493,6 +498,63 @@ class AISettingsContainer(ui.Container):
 
         self.parent_view.render_ai(cbc_page=self.cbc_page)
         await interaction.response.edit_message(view=self.parent_view)
+
+
+class SystemInstructionsContainer(ui.Container):
+    def __init__(self, guild_settings: dict, guild: discord.Guild, bot, parent_view):
+        super().__init__()
+        self.guild_settings = guild_settings
+        self.guild = guild
+        self.bot = bot
+        self.parent_view = parent_view
+        self._make_container()
+
+    def _make_container(self):
+        # 1. Header with < Back button
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back
+        header_section = ui.Section(
+            ui.TextDisplay("## System Instructions\n-# Set custom system instructions or guidelines for the AI."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        # Section 1: Showcase of current system instructions
+        current_prompt = self.guild_settings.get("custom_prompt")
+        if current_prompt and current_prompt.strip():
+            preview = current_prompt.strip()
+            if len(preview) > 1500:
+                preview = preview[:1500] + "..."
+            showcase_text = (
+                f"**Current Instructions:**\n"
+                f"```{preview}```"
+            )
+        else:
+            showcase_text = (
+                f"**Current Instructions:**\n"
+                f"-# *No custom instructions set (using default spl1ceAI persona).*"
+            )
+
+        self.add_item(ui.TextDisplay(showcase_text))
+        self.add_item(ui.Separator())
+
+        # Section 2: Edit button section
+        edit_display = ui.TextDisplay(
+            f"**System instructions**\n"
+            f"-# Set custom system instructions or guidelines for the AI."
+        )
+        edit_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
+        edit_button.callback = self._on_edit
+        self.add_item(ui.Section(edit_display, accessory=edit_button))
+
+    async def _on_back(self, interaction: discord.Interaction):
+        self.parent_view.render_ai()
+        await interaction.response.edit_message(view=self.parent_view)
+
+    async def _on_edit(self, interaction: discord.Interaction):
+        current_prompt = self.guild_settings.get("custom_prompt")
+        await interaction.response.send_modal(CustomPromptModal(current_prompt, self.guild.id, self.parent_view))
 
 
 class LogsSettingsContainer(ui.Container):
@@ -1059,6 +1121,11 @@ class SettingsView(ui.LayoutView):
     def render_ai(self, cbc_page: int = 0):
         self.clear_items()
         container = AISettingsContainer(self.guild_settings, self.guild, self.bot, self, cbc_page=cbc_page)
+        self.add_item(container)
+
+    def render_prompt_settings(self):
+        self.clear_items()
+        container = SystemInstructionsContainer(self.guild_settings, self.guild, self.bot, self)
         self.add_item(container)
 
     def render_footer_settings(self):
