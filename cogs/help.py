@@ -29,7 +29,7 @@ CATEGORY_CONFIG = {
         "name": "Tools",
         "emoji": "🛠️",
         "cogs": ["Settings", "Billing", "Tools", "Logs", "Analytics"],
-        "description": "Server configuration, persona settings, and utilities."
+        "description": "Server configuration, system instructions, and utilities."
     },
     "other": {
         "name": "Other",

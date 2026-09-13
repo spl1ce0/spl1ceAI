@@ -7,7 +7,7 @@ This package manages all Large Language Model (LLM) communications, fixed 3-tier
 ## 📁 Files & Structure
 
 * **`cog.py` (`AI`)**: The Discord Cog front-end. Defines `/quota` (`/usage`), `/ask`, `/summarize`, `/summon`, and the `on_message` listener. Handles session lifecycles, duration timers, weekly token quota checks (Free Snapshot Tier vs Premium Guild Plan vs BYOK), and real-time AI transaction telemetry logging (`ai_telemetry`).
-* **`ai.py`**: The core AI processing engine containing model client abstraction classes, prompt builders with custom server persona injection, 3-tier disaster-resilient failover orchestrators, per-model token/image cost calculators, and latency/model tracking metadata.
+* **`ai.py`**: The core AI processing engine containing model client abstraction classes, prompt builders with custom server system instructions injection, 3-tier disaster-resilient failover orchestrators, per-model token/image cost calculators, and latency/model tracking metadata.
 * **`models.json`**: Model catalog defining supported endpoints, providers (Google Gemini, OpenAI, Anthropic, xAI Grok), API formats, and capability flags.
 
 ---
@@ -35,7 +35,7 @@ Servers using **Bring Your Own Key (BYOK)** can configure their own custom 2-mod
 | **Context Window** | 5 msgs (`/ask`) • 15 msgs (chat) | 30 msgs everywhere | 30 msgs everywhere |
 | **Vision (Images)** | ❌ Disabled (Text-only) | ✅ Full image attachment analysis | ✅ Full image attachment analysis |
 | **Image Generation** | 1 image every 2 weeks | 7 images / week (~30/month) | Unlimited |
-| **Custom Persona** | Default `spl1ceAI` persona | Custom system prompt (via `/settings`) | Custom system prompt (via `/settings`) |
+| **Custom System Instructions** | Default `spl1ceAI` persona | Custom system instructions (via `/settings`) | Custom system instructions (via `/settings`) |
 
 ---
 

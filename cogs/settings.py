@@ -41,10 +41,10 @@ class PrefixModal(ui.Modal, title="Change Prefix"):
         await interaction.response.edit_message(view=self.parent_view)
 
 
-class CustomPromptModal(ui.Modal, title="Custom Persona / Prompt"):
+class CustomPromptModal(ui.Modal, title="System instructions"):
     prompt_input = ui.TextInput(
-        label="System Prompt Instructions",
-        placeholder="Enter custom persona or instructions for this server...",
+        label="System instructions",
+        placeholder="Enter custom system instructions for this server...",
         style=discord.TextStyle.paragraph,
         max_length=2000,
         required=False
@@ -66,7 +66,7 @@ class CustomPromptModal(ui.Modal, title="Custom Persona / Prompt"):
         )
         if new_prompt and not is_paid_or_byok:
             await interaction.response.send_message(
-                "Custom system prompts require Premium (2.99€/mo) or BYOK mode.",
+                "Custom system instructions require Premium (2.99€/mo) or BYOK mode.",
                 ephemeral=True
             )
             return
@@ -402,7 +402,7 @@ class AISettingsContainer(ui.Container):
 
         self.add_item(ui.Separator())
 
-        # 2. Custom Persona / Prompt
+        # 2. System instructions
         has_byok = bool(
             self.guild_settings.get("byok_gemini_key") or 
             self.guild_settings.get("byok_xai_key") or 
@@ -413,8 +413,8 @@ class AISettingsContainer(ui.Container):
         )
 
         prompt_display = ui.TextDisplay(
-            f"**Custom Persona / Prompt**\n"
-            f"-# Set a custom system instruction or personality for the AI."
+            f"**System instructions**\n"
+            f"-# Set custom system instructions or guidelines for the AI."
         )
         prompt_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         prompt_button.callback = self.custom_prompt_configure

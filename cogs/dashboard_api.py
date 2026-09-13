@@ -135,8 +135,8 @@ async def handle_settings_schema(request: web.Request) -> web.Response:
             {
                 "id": "custom_prompt",
                 "category": "ai",
-                "name": "Custom Persona / Prompt",
-                "description": "Set a custom system instruction or personality for the AI.",
+                "name": "Custom System Instructions",
+                "description": "Set custom system instructions or guidelines for the AI.",
                 "tag": "Premium / BYOK",
                 "type": "subpage_button",
                 "subpage": "prompt",
