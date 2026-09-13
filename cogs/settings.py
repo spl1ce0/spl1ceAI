@@ -540,7 +540,10 @@ class SystemInstructionsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # Section 2: Edit button section
-        edit_display = ui.TextDisplay("**Change instructions**")
+        edit_display = ui.TextDisplay(
+            f"**Change instructions**\n"
+            f"-# Customize the AI's tone, guidelines and behaviour."
+        )
         edit_button = ui.Button(emoji=Emojis.EDIT, style=discord.ButtonStyle.gray)
         edit_button.callback = self._on_edit
         self.add_item(ui.Section(edit_display, accessory=edit_button))
@@ -572,10 +575,9 @@ class LogsSettingsContainer(ui.Container):
 
         log_channel = self.guild_settings.get("log_channel")
         log_state = "off" if log_channel is None else "on"
-        channel_name = f"#{self.guild.get_channel(log_channel).name}" if (log_channel and self.guild.get_channel(log_channel)) else "`disabled`"
 
         log_display = ui.TextDisplay(
-            f"**Chat Logs Channel:** {channel_name}\n"
+            f"**Chat Logs Channel**\n"
             f"-# Channel where message edits and deletions are logged."
         )
         log_button = ui.Button(emoji=Emojis.ON if log_state == "on" else Emojis.OFF, style=discord.ButtonStyle.gray)
