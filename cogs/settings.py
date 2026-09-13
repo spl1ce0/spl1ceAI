@@ -268,11 +268,12 @@ class LogChannelSelect(ui.Select):
 
         for ch in page_channels:
             is_default = (ch.id == selected_id)
+            category_name = ch.category.name[:100] if ch.category else "No Category"
             options.append(discord.SelectOption(
                 label=f"#{ch.name}"[:100],
                 value=str(ch.id),
                 default=is_default,
-                description=f"ID: {ch.id}"
+                description=category_name
             ))
 
         if end_idx < total_channels:
