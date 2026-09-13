@@ -9,7 +9,7 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 * **[`ai/`](./ai/README.md)**: Large Language Model subsystem (multi-provider failover pipeline, multimodal context preparation, vision & code attachment processing, customizable response footers).
 * **[`billing/`](./billing/README.md)**: Premium subscription checkout and portal management via Polar.sh with comparative plan paginator.
 * **[`games/`](./games/README.md)**: Interactive Connect 4 game engine with Monte Carlo Tree Search (MCTS) AI, Blackjack casino engine, and ActionRow button UI.
-* **[`utils/`](./utils/README.md)**: Core utilities, asynchronous database management (`DatabaseManager`), exception hierarchies, and shared constants.
+* **[`utils/`](./utils/README.md)**: Core utilities, asynchronous database management (`DatabaseManager`), exception hierarchies, notification card framework (`NotificationCardView`), and shared constants.
 
 ---
 

@@ -3,6 +3,7 @@ from discord.ext.commands import Context, GuildConverter
 
 import discord
 from cogs.utils.constants import Emojis
+from cogs.utils.cards import send_confirmation, send_info, send_warning
 from discord import ui
 import typing
 from typing import Optional
@@ -343,7 +344,12 @@ class Dev(cmds.Cog):
     @cmds.is_owner()
     async def update(self, ctx: Context):
         """Update system components (bot or website)."""
-        await ctx.reply("ℹ️ **Specify a target to update:** `!update bot` or `!update web`", mention_author=False)
+        await send_info(
+            ctx,
+            "System Update",
+            "Please specify a target component to update:",
+            details="• `!update bot` — Pull latest repository changes and restart bot service.\n• `!update web` — Pull website repository and rebuild production bundle."
+        )
 
 
     @update.command(name='bot', aliases=['core', 'app'])
@@ -545,14 +551,19 @@ class Dev(cmds.Cog):
         """
         target_guild = guild or ctx.guild
         if not target_guild:
-            await ctx.reply(f"{Emojis.ERROR} Please specify a valid guild ID or run this command inside a server.")
+            await send_warning(ctx, "Server Required", "Please specify a valid guild ID or run this command inside a server.")
             return
 
         val = 1 if status else 0
         await self.bot.db_manager.update_guild_setting(target_guild.id, "is_premium", val)
         self.bot.settings_cache.setdefault(target_guild.id, {})["is_premium"] = val
-        state_str = "👑 **Premium Plan** (1M tokens/wk, 30 msgs context, vision, 5 images/wk [20/mo])" if status else "🆓 **Free Snapshot Plan**"
-        await ctx.reply(f"✅ Updated **{target_guild.name}** (`{target_guild.id}`) to {state_str}.")
+        state_str = "👑 **Premium Plan** (1M tokens/wk, 30 msgs context, vision, 7 images/wk [30/mo])" if status else "🆓 **Free Snapshot Plan**"
+        await send_confirmation(
+            ctx,
+            "Server Tier Updated",
+            f"Updated **{target_guild.name}** (`{target_guild.id}`) to {state_str}.",
+            thumbnail_url=target_guild.icon.url if target_guild.icon else None
+        )
 
     @cmds.hybrid_command(name="inspect", aliases=["audituser", "userlookup", "whois", "userdossier"])
     @cmds.is_owner()
@@ -565,7 +576,7 @@ class Dev(cmds.Cog):
         try:
             target_uid = int(clean_uid)
         except ValueError:
-            await ctx.reply("❌ Invalid user ID or mention provided.", ephemeral=True)
+            await send_warning(ctx, "Invalid User", "Invalid user ID or mention provided.", ephemeral=True)
             return
 
         view = UserAuditLayoutView(self.bot, target_uid)
@@ -582,12 +593,21 @@ class Dev(cmds.Cog):
         try:
             target_uid = int(clean_uid)
         except ValueError:
-            await ctx.reply("❌ Invalid user ID or mention.", ephemeral=True)
+            await send_warning(ctx, "Invalid User", "Invalid user ID or mention.", ephemeral=True)
             return
 
         await self.bot.db_manager.blacklist_user(target_uid, reason=reason, admin_id=ctx.author.id)
         self.bot.blacklist_cache.add(target_uid)
-        await ctx.reply(f"🚫 **User `{target_uid}` is now globally blacklisted.**\n-# Reason: *{reason}*", ephemeral=True)
+        target_user = self.bot.get_user(target_uid)
+        thumb = target_user.display_avatar.url if target_user else None
+        await send_warning(
+            ctx,
+            "User Blacklisted",
+            f"User `{target_uid}` is now globally blacklisted.",
+            footer=f"Reason: {reason}",
+            thumbnail_url=thumb,
+            ephemeral=True
+        )
 
     @cmds.hybrid_command(name="unblacklist", aliases=["unblockuser", "unbanuser"])
     @cmds.is_owner()
@@ -599,12 +619,20 @@ class Dev(cmds.Cog):
         try:
             target_uid = int(clean_uid)
         except ValueError:
-            await ctx.reply("❌ Invalid user ID or mention.", ephemeral=True)
+            await send_warning(ctx, "Invalid User", "Invalid user ID or mention.", ephemeral=True)
             return
 
         await self.bot.db_manager.unblacklist_user(target_uid)
         self.bot.blacklist_cache.discard(target_uid)
-        await ctx.reply(f"🟢 **User `{target_uid}` has been unblacklisted.**", ephemeral=True)
+        target_user = self.bot.get_user(target_uid)
+        thumb = target_user.display_avatar.url if target_user else None
+        await send_confirmation(
+            ctx,
+            "User Unblacklisted",
+            f"User `{target_uid}` has been removed from the global blacklist.",
+            thumbnail_url=thumb,
+            ephemeral=True
+        )
 
     @cmds.hybrid_command(name="inspectguild", aliases=["auditguild", "guildlookup", "guilddossier", "whoisguild"])
     @cmds.is_owner()
@@ -2460,12 +2488,16 @@ class AnalyticsHeatmapContainer(ui.Container):
         """[Owner Only] Grants money to any user's economy wallet."""
         await ctx.defer(ephemeral=True)
         if amount <= 0:
-            await ctx.reply("❌ Amount must be greater than 0.", ephemeral=True)
+            await send_warning(ctx, "Invalid Amount", "Amount must be greater than 0.", ephemeral=True)
             return
 
         new_bal = await self.bot.db_manager.adjust_user_balance(user.id, amount)
-        await ctx.reply(
-            f"✅ Granted **+{amount:,.2f}€** to {user.mention}.\n• New Balance: **{new_bal:,.2f}€**",
+        await send_confirmation(
+            ctx,
+            "Balance Granted",
+            f"Granted **+{amount:,.2f}€** to {user.mention}.",
+            footer=f"New Balance: {new_bal:,.2f}€",
+            thumbnail_url=user.display_avatar.url,
             ephemeral=True
         )
 

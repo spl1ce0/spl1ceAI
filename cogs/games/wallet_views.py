@@ -4,6 +4,7 @@ import typing
 import logging
 
 from cogs.utils.constants import Emojis
+from cogs.utils.cards import send_confirmation, send_info, send_warning
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ class WalletView(ui.LayoutView):
 
     async def _on_claim_daily(self, interaction: discord.Interaction):
         if interaction.user.id != self.author.id:
-            await interaction.response.send_message("❌ You cannot claim someone else's daily reward!", ephemeral=True)
+            await send_warning(interaction, "Unauthorized", "You cannot claim someone else's daily reward!", ephemeral=True)
             return
 
         success, res = await self.bot.db_manager.claim_daily(self.author.id)
@@ -153,21 +154,31 @@ class WalletView(ui.LayoutView):
             streak = res["streak"]
             await self.render_wallet()
             await interaction.response.edit_message(view=self)
-            await interaction.followup.send(
-                f"🎉 **Daily Reward Claimed!**\n• Received: **+{reward:,.2f}€**\n• Streak: 🔥 **{streak} days**",
+            await send_confirmation(
+                interaction,
+                "Daily Reward Claimed",
+                f"You received **+{reward:,.2f}€** into your wallet!",
+                details=f"🔥 **Daily Streak:** {streak} day{'s' if streak != 1 else ''}",
+                footer="Come back tomorrow to keep your streak going!",
                 ephemeral=True
             )
         else:
-            await interaction.response.send_message("⏱️ You have already claimed your daily reward today!", ephemeral=True)
+            await send_info(
+                interaction,
+                "Daily Reward Claimed",
+                "You have already claimed your daily reward today!",
+                footer="Check back tomorrow to claim your next reward.",
+                ephemeral=True
+            )
 
     async def _on_view_leaderboard(self, interaction: discord.Interaction):
         if interaction.user.id != self.author.id:
-            await interaction.response.send_message("❌ This is not your menu.", ephemeral=True)
+            await send_warning(interaction, "Unauthorized", "This is not your menu.", ephemeral=True)
             return
         await self.render_leaderboard(interaction)
 
     async def _on_back_to_wallet(self, interaction: discord.Interaction):
         if interaction.user.id != self.author.id:
-            await interaction.response.send_message("❌ This is not your menu.", ephemeral=True)
+            await send_warning(interaction, "Unauthorized", "This is not your menu.", ephemeral=True)
             return
         await self.render_wallet(interaction)

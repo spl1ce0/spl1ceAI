@@ -9,6 +9,7 @@ from discord import ui
 
 from .blackjack import TableManager, BlackjackTable, TablePhase, BlackjackPlayer
 from cogs.utils.constants import Emojis
+from cogs.utils.cards import send_confirmation, send_warning
 
 
 class RadioOption:
@@ -185,10 +186,10 @@ class CustomBetModal(ui.Modal, title="Enter Custom Bet"):
         try:
             bet_val = float(self.bet_input.value.strip())
             if bet_val < self.table.min_bet:
-                await interaction.response.send_message(f"❌ Bet must be at least €{self.table.min_bet:.2f}.", ephemeral=True)
+                await send_warning(interaction, "Invalid Bet", f"Bet must be at least €{self.table.min_bet:.2f}.", ephemeral=True)
                 return
         except ValueError:
-            await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+            await send_warning(interaction, "Invalid Amount", "Please enter a valid numeric amount.", ephemeral=True)
             return
 
         economy = await self.bot.db_manager.get_user_economy(interaction.user.id)
@@ -198,12 +199,12 @@ class CustomBetModal(ui.Modal, title="Enter Custom Bet"):
         ok, msg, current_bet = self.table.add_bet(interaction.user.id, bet_val, bal)
 
         if not ok:
-            await interaction.response.send_message(f"❌ {msg}", ephemeral=True)
+            await send_warning(interaction, "Bet Error", msg, ephemeral=True)
             return
 
         await self.player_seat_view.refresh_message()
         await self.table.broadcast_updates()
-        await interaction.response.send_message(f"✅ Bet set to **€{current_bet:.2f}**.", ephemeral=True)
+        await send_confirmation(interaction, "Bet Placed", f"Bet set to **€{current_bet:.2f}**.", footer=f"Table Min: €{self.table.min_bet:.2f}", ephemeral=True)
 
 
 # =========================================================================

@@ -8,6 +8,7 @@ This package contains shared system infrastructure, asynchronous database manage
 
 * **`db.py` (`DatabaseManager`)**: Asynchronous SQLite manager using `asqlite`. Handles database initialization, table creation, migrations, server settings persistence, telemetry recording, and state storage.
 * **`constants.py`**: Global UI constants, custom emojis (`Emojis`), domain URLs (`URLs`), error message formatters (`ErrorMessages`), and default configuration values (`DefaultSettings`).
+* **`cards.py` (`NotificationCardView`)**: Discord Components V2 notification card framework providing factory builders (`build_confirmation_card`, `build_info_card`, `build_warning_card`, `build_progress_card`) and unified async dispatchers (`send_confirmation`, `send_info`, `send_warning`) with color-accented containers and dismiss buttons.
 * **`exceptions.py`**: Custom domain exceptions inheriting from `BotError` across AI (`AIError`, `AIQuotaReachedError`), Economy (`EconomyError`, `InsufficientBalanceError`, `DailyAlreadyClaimedError`), and Tools (`ToolError`, `InvalidURLError`, `MediaTooLongError`, `MediaDownloadError`).
 
 ---
