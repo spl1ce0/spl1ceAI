@@ -2,20 +2,27 @@ import os
 import time
 import logging
 import datetime
+from typing import Optional
 import psutil
 import discord
 from discord.ext import commands, tasks
+from discord.ext.commands import Context
+from cogs.utils.constants import Emojis
+from .views import AnalyticsLayoutView
 
 logger = logging.getLogger(__name__)
 
 
 class Analytics(commands.Cog):
+    """Developer telemetry, real-time analytics hub, and host monitoring."""
     def __init__(self, bot):
         self.bot = bot
         self.system_telemetry_loop.start()
 
     def cog_unload(self):
         self.system_telemetry_loop.cancel()
+
+    # --- Telemetry Event Listeners ---
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):
@@ -95,7 +102,7 @@ class Analytics(commands.Cog):
             ram_pct = psutil.virtual_memory().percent
             disk_pct = psutil.disk_usage('/').percent
             ws_latency = int(self.bot.latency * 1000)
-            
+
             db_size = 0
             db_path = "bot.db"
             if os.path.exists(db_path):
@@ -125,6 +132,55 @@ class Analytics(commands.Cog):
     async def before_system_telemetry(self):
         await self.bot.wait_until_ready()
 
+    # --- Interactive Analytics Hub Command ---
 
-async def setup(bot):
-    await bot.add_cog(Analytics(bot))
+    @commands.hybrid_command(name="analytics", aliases=["telemetry", "dev_stats"])
+    @commands.is_owner()
+    async def analytics(self, ctx: Context, category: Optional[str] = None, target: Optional[str] = None):
+        """Displays the developer telemetry hub with instant shortcuts."""
+        view = AnalyticsLayoutView(self.bot)
+        cat_lower = (category or "").lower().strip()
+
+        if cat_lower in ["user", "u"] and target:
+            # Direct User Dossier Lookup
+            raw_uid = target.replace("<@", "").replace(">", "").replace("!", "").strip()
+            if raw_uid.isdigit():
+                await view.render_user_dossier(int(raw_uid))
+            else:
+                await view.render_users()
+        elif cat_lower in ["server", "guild", "s", "g"]:
+            # Direct Server Dossier Lookup (defaults to current guild if none provided)
+            target_gid = None
+            if target and target.strip().isdigit():
+                target_gid = int(target.strip())
+            elif ctx.guild:
+                target_gid = ctx.guild.id
+
+            if target_gid:
+                await view.render_server_dossier(target_gid)
+            else:
+                await view.render_servers()
+        elif cat_lower in ["servers", "guilds"]:
+            await view.render_server_list(page=1)
+        elif cat_lower in ["users"]:
+            await view.render_user_list(page=1)
+        elif cat_lower in ["uptime", "up"]:
+            await view.render_uptime()
+        elif cat_lower in ["ai", "llm"]:
+            await view.render_ai()
+        elif cat_lower in ["sys", "system", "hardware", "hw"]:
+            await view.render_system()
+        elif cat_lower in ["errors", "error", "err"]:
+            await view.render_errors()
+        elif cat_lower in ["commands", "traffic", "cmd"]:
+            await view.render_commands()
+        elif cat_lower in ["heatmap", "heat"]:
+            await view.render_heatmap()
+        else:
+            await view.render_home()
+
+        files = view.get_current_files()
+        if files:
+            await ctx.reply(view=view, files=files)
+        else:
+            await ctx.reply(view=view)

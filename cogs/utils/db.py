@@ -1025,6 +1025,22 @@ class DatabaseManager:
                 "new_users_7d": new_users_7d
             }
 
+    async def get_users_paginated(self, page: int = 1, page_size: int = 8) -> tuple[list, int, int]:
+        """Fetches a paginated list of registered users sorted by total commands."""
+        offset = (page - 1) * page_size
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT COUNT(*) FROM user_telemetry")
+            total_count = (await cursor.fetchone())[0] or 0
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+
+            await cursor.execute(
+                "SELECT user_id, total_commands_run, first_seen, last_seen "
+                "FROM user_telemetry ORDER BY total_commands_run DESC LIMIT ? OFFSET ?",
+                (page_size, offset)
+            )
+            rows = await cursor.fetchall()
+            return rows, total_count, total_pages
+
     async def get_ai_analytics_summary(self) -> dict:
         """Fetches AI engine metrics, model breakdown, failovers, and hourly traffic."""
         async with self.db.cursor() as cursor:
@@ -1751,6 +1767,13 @@ class DatabaseManager:
             )
             recent_cmds = await cursor.fetchall()
 
+            # 7. Top Active Channels in Guild
+            await cursor.execute(
+                "SELECT channel_id, COUNT(*) as cnt FROM command_telemetry WHERE guild_id = ? AND channel_id IS NOT NULL GROUP BY channel_id ORDER BY cnt DESC LIMIT 5",
+                (guild_id,)
+            )
+            top_channels = await cursor.fetchall()
+
             return {
                 "guild_id": guild_id,
                 "settings": settings,
@@ -1760,6 +1783,7 @@ class DatabaseManager:
                 "total_ai_queries": total_ai,
                 "total_tokens": total_tokens,
                 "top_users": top_users,
+                "top_channels": top_channels,
                 "recent_ai": recent_ai,
                 "recent_commands": recent_cmds
             }

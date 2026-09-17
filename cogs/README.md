@@ -7,6 +7,7 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 ## 📁 Sub-Packages
 
 * **[`ai/`](./ai/README.md)**: Large Language Model subsystem (multi-provider failover pipeline, multimodal context preparation, vision & code attachment processing, customizable response footers).
+* **[`analytics/`](./analytics/README.md)**: Comprehensive developer intelligence and telemetry suite (servers/users dossiers, paginated lists, AI prompt queries, real-time VPS diagnostics, uptime sparkline charts, error tracebacks, and activity heatmaps).
 * **[`billing/`](./billing/README.md)**: Premium subscription checkout and portal management via Polar.sh with comparative plan paginator.
 * **[`games/`](./games/README.md)**: Interactive Connect 4 game engine with Monte Carlo Tree Search (MCTS) AI, Blackjack casino engine, and ActionRow button UI.
 * **[`utils/`](./utils/README.md)**: Core utilities, asynchronous database management (`DatabaseManager`), exception hierarchies, notification card framework (`NotificationCardView`), and shared constants.
@@ -17,8 +18,7 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 
 | Cog File | Class Name | Key Commands / Listeners | Description |
 | :--- | :--- | :--- | :--- |
-| **`analytics.py`** | `Analytics` | Background loop, `on_message`, `on_command_completion` | Collects 5-minute system hardware metrics, hourly activity heatmap traffic, guild events, and command execution stats. |
-| **`dev.py`** | `Dev` | `!alive`, `!ext`, `!update (bot/web)`, `!restart`, `!commands`, `!logs`, `!analytics`, `!inspect`, `!inspectguild`, `!blacklist`, `!unblacklist`, `/givemoney` | Owner-only maintenance commands, extension hot-reloading, tree syncing, interactive log viewer, telemetry dashboard, user & guild intelligence dossiers, paginated prompt history browsers, forensic text log exporter, global blacklist controls, and wallet balance adjustments. |
+| **`dev.py`** | `Dev` | `!alive`, `!ext`, `!update (bot/web)`, `!restart`, `!commands`, `!logs`, `!inspect`, `!inspectguild`, `!blacklist`, `!unblacklist`, `/givemoney` | Owner-only maintenance commands, extension hot-reloading, tree syncing, interactive log viewer, forensic text log exporter, global blacklist controls, wallet balance adjustments, and direct delegation to the analytics intelligence suite. |
 | **`errors.py`** | `ErrorHandler` | `on_app_command_error`, `on_command_error` | Central error handler translating exceptions into Discord Components V2 `ErrorCardView` container cards with actionable buttons, dynamic countdowns, incident IDs, and telemetry recording in `error_telemetry`. |
 | **`fun.py`** | `Fun` | `/sealion`, `/anoomals`, `/ban`, `/quote` | Random TikTok video scrapers/downloaders (`yt-dlp`), fake ban UI container card, and dynamic image quote card generation (Pillow + Pilmoji). |
 | **`help.py`** | `Help` | `/help` (`/h`, `/cmds`, `/bothelp`) | Dynamic 2-level interactive command center with category browsing, detailed command inspector, permissions badging, and owner-only dev category filtering. |
