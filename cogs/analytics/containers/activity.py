@@ -9,11 +9,18 @@ class AnalyticsCommandsContainer(ui.Container):
         super().__init__()
         self.bot = bot
 
-        self.add_item(ui.TextDisplay("## Commands & Feature Telemetry"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Commands & Feature Telemetry\n-# Latency breakdown, popular commands and invocation ratio."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
-        total = data.get("total_commands_24h", 0)
-        slash_count = data.get("slash_commands_24h", 0)
+        total = data.get("total_commands_24h", data.get("total_24h", 0))
+        slash_count = data.get("slash_commands_24h", data.get("slash_24h", 0))
         prefix_count = total - slash_count
         slash_pct = (slash_count / total * 100) if total > 0 else 0.0
         prefix_pct = (prefix_count / total * 100) if total > 0 else 0.0
@@ -44,22 +51,16 @@ class AnalyticsCommandsContainer(ui.Container):
         self.add_item(ui.TextDisplay(f"**Execution Bottlenecks (Slowest):**\n{slow_str}"))
         self.add_item(ui.Separator())
 
-        # Action Buttons
+        # Action Button: Refresh
         nav_row = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
-
         self.add_item(nav_row)
 
     @classmethod
     async def create(cls, view):
-        data = await view.bot.db_manager.get_commands_analytics_summary()
+        data = await view.bot.db_manager.get_command_analytics_summary()
         return cls(view.bot, data)
 
     async def _on_back_click(self, interaction: discord.Interaction):
@@ -77,7 +78,14 @@ class AnalyticsHeatmapContainer(ui.Container):
         super().__init__()
         self.bot = bot
 
-        self.add_item(ui.TextDisplay("## Activity Heatmap & Peak Hours"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Activity Heatmap & Peak Hours\n-# Hourly message density and bot reply traffic."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         hourly_rows = data.get("hourly_heatmap", [])
@@ -92,7 +100,6 @@ class AnalyticsHeatmapContainer(ui.Container):
         self.add_item(ui.Separator())
 
         if hourly_rows:
-            # Sort to find peak and quiet hours
             sorted_by_traffic = sorted(hourly_rows, key=lambda r: r[1] + r[2], reverse=True)
             peak = sorted_by_traffic[0]
             quiet = sorted_by_traffic[-1]
@@ -102,7 +109,6 @@ class AnalyticsHeatmapContainer(ui.Container):
             self.add_item(ui.TextDisplay(f"**Traffic Windows:**\n{peak_str}\n{quiet_str}"))
             self.add_item(ui.Separator())
 
-            # Display 4 sample time blocks
             block_lines = []
             for h_bucket, m_cnt, b_cnt in hourly_rows[:6]:
                 block_lines.append(f"• `{h_bucket}`: {m_cnt:,} msgs / {b_cnt:,} AI replies")
@@ -112,17 +118,10 @@ class AnalyticsHeatmapContainer(ui.Container):
 
         self.add_item(ui.Separator())
 
-        # Action Buttons
         nav_row = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
-
         self.add_item(nav_row)
 
     @classmethod

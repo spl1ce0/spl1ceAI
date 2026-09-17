@@ -4,15 +4,25 @@ import discord
 from discord import ui
 from cogs.utils.constants import Emojis
 from .modals import InspectGuildModal
+from ..charts import generate_servers_chart
 
 
 class AnalyticsServersContainer(ui.Container):
-    """Page 1.0: Servers Overview & Join/Leave Events."""
-    def __init__(self, bot, data: dict, current_guilds: int, total_members: int):
+    """Page 1.0: Servers Overview, Growth Graph & Join/Leave Events."""
+    def __init__(self, bot, data: dict, current_guilds: int, total_members: int, growth_data: list, timeframe: str = "1d", file: Optional[discord.File] = None):
         super().__init__()
         self.bot = bot
+        self.timeframe = timeframe
+        self.file = file
 
-        self.add_item(ui.TextDisplay("## Servers Overview"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Servers Overview\n-# Guild installations, growth trajectory, and retention metrics."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         total_joins = data.get("total_joins", 0)
@@ -28,10 +38,25 @@ class AnalyticsServersContainer(ui.Container):
         self.add_item(ui.TextDisplay(summary_text))
         self.add_item(ui.Separator())
 
+        # Server Growth Chart & Timeframe Filter Buttons
+        if self.file:
+            self.add_item(ui.MediaGallery(discord.MediaGalleryItem(media=self.file)))
+            
+            tf_row = ui.ActionRow()
+            for tf in ["1d", "1w", "1m", "1y"]:
+                btn = ui.Button(
+                    label=tf.upper(),
+                    style=discord.ButtonStyle.primary if tf == self.timeframe else discord.ButtonStyle.gray
+                )
+                btn.callback = self._make_tf_callback(tf)
+                tf_row.add_item(btn)
+            self.add_item(tf_row)
+            self.add_item(ui.Separator())
+
         # Recent join / leave events
         recent_events = data.get("recent_events", [])
         event_lines = []
-        for gid, etype, mcount, ts in recent_events[:6]:
+        for gid, etype, mcount, ts in recent_events[:5]:
             icon = "🟢" if etype == "join" else "🔴"
             guild_obj = self.bot.get_guild(gid)
             g_name = f"**{guild_obj.name}**" if guild_obj else f"Guild `{gid}`"
@@ -49,10 +74,6 @@ class AnalyticsServersContainer(ui.Container):
         # Action Buttons
         nav_row = ui.ActionRow()
 
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         list_btn = ui.Button(label="Server List 📋", style=discord.ButtonStyle.gray)
         list_btn.callback = self._on_server_list_click
         nav_row.add_item(list_btn)
@@ -67,12 +88,22 @@ class AnalyticsServersContainer(ui.Container):
 
         self.add_item(nav_row)
 
+    def _make_tf_callback(self, tf: str):
+        async def callback(interaction: discord.Interaction):
+            await self.view.render_servers(timeframe=tf)
+            await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+        return callback
+
     @classmethod
-    async def create(cls, view):
+    async def create(cls, view, timeframe: str = "1d"):
         data = await view.bot.db_manager.get_guild_analytics_summary(limit=8)
         current_guilds = len(view.bot.guilds)
         total_members = sum(g.member_count for g in view.bot.guilds if g.member_count)
-        return cls(view.bot, data, current_guilds, total_members)
+        growth_data = await view.bot.db_manager.get_server_growth_history(timeframe=timeframe)
+
+        chart_buf = generate_servers_chart(growth_data, timeframe=timeframe, current_count=current_guilds)
+        chart_file = discord.File(chart_buf, filename="servers_growth.png")
+        return cls(view.bot, data, current_guilds, total_members, growth_data, timeframe=timeframe, file=chart_file)
 
     async def _on_back_click(self, interaction: discord.Interaction):
         await self.view.render_home()
@@ -86,39 +117,49 @@ class AnalyticsServersContainer(ui.Container):
         await interaction.response.send_modal(InspectGuildModal(self.bot, self.view, back_target="servers"))
 
     async def _on_refresh_click(self, interaction: discord.Interaction):
-        await self.view.render_servers()
+        await self.view.render_servers(timeframe=self.timeframe)
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
 
 
 class ServerListContainer(ui.Container):
-    """Page 1.0.1: Paginated list of every server the bot is in."""
+    """Page 1.0.1: Paginated list of every server the bot is in with 1-click inspect."""
     def __init__(self, bot, guilds: List[discord.Guild], page: int, total_pages: int, total_count: int):
         super().__init__()
         self.bot = bot
         self.page = page
         self.total_pages = total_pages
 
-        self.add_item(ui.TextDisplay(f"## Server Directory\n-# Page {page} of {total_pages} • {total_count:,} Total Servers"))
-        self.add_item(ui.Separator())
-
-        guild_lines = []
-        for g in guilds:
-            settings = self.bot.settings_cache.get(g.id, {})
-            plan_str = "PREMIUM 👑" if settings.get("is_premium") else "BYOK ⚡" if settings.get("has_byok") else "FREE"
-            owner = g.owner or f"Owner ID `{g.owner_id}`"
-            members = g.member_count or 0
-            guild_lines.append(f"• **{g.name}** (`{g.id}`)\n  -# Members: {members:,} • Owner: {owner} • Plan: `{plan_str}`")
-
-        list_content = "\n\n".join(guild_lines) if guild_lines else "*No servers found.*"
-        self.add_item(ui.TextDisplay(list_content))
-        self.add_item(ui.Separator())
-
-        # Pagination & Actions
-        nav_row = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Overview", style=discord.ButtonStyle.gray)
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
         back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
+        header_section = ui.Section(
+            ui.TextDisplay(f"## Server Directory\n-# Page {page} of {total_pages} • {total_count:,} Total Servers"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
+        self.add_item(ui.Separator())
+
+        if not guilds:
+            self.add_item(ui.TextDisplay("*No servers found.*"))
+        else:
+            for g in guilds:
+                settings = self.bot.settings_cache.get(g.id, {})
+                plan_str = "PREMIUM 👑" if settings.get("is_premium") else "BYOK ⚡" if settings.get("has_byok") else "FREE"
+                owner_name = g.owner.name if g.owner else f"Owner ID {g.owner_id}"
+                members = g.member_count or 0
+
+                server_display = ui.TextDisplay(
+                    f"**{g.name}** (`{g.id}`)\n"
+                    f"-# 👥 {members:,} members • Owner: {owner_name} • Plan: `{plan_str}`"
+                )
+                inspect_btn = ui.Button(label="Inspect", style=discord.ButtonStyle.gray)
+                inspect_btn.callback = self._make_inspect_callback(g.id)
+                self.add_item(ui.Section(server_display, accessory=inspect_btn))
+
+        self.add_item(ui.Separator())
+
+        # Pagination Action Row
+        nav_row = ui.ActionRow()
 
         prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(page <= 1))
         prev_btn.callback = self._on_prev_click
@@ -131,14 +172,20 @@ class ServerListContainer(ui.Container):
         next_btn.callback = self._on_next_click
         nav_row.add_item(next_btn)
 
-        inspect_btn = ui.Button(label="Inspect 🔍", style=discord.ButtonStyle.gray)
-        inspect_btn.callback = self._on_inspect_click
-        nav_row.add_item(inspect_btn)
+        ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_refresh_click
+        nav_row.add_item(ref_btn)
 
         self.add_item(nav_row)
 
+    def _make_inspect_callback(self, guild_id: int):
+        async def callback(interaction: discord.Interaction):
+            await self.view.render_server_dossier(guild_id, back_target="server_list")
+            await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+        return callback
+
     @classmethod
-    def create(cls, view, page: int = 1, page_size: int = 6):
+    def create(cls, view, page: int = 1, page_size: int = 5):
         all_guilds = sorted(view.bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
         total_count = len(all_guilds)
         total_pages = max(1, (total_count + page_size - 1) // page_size)
@@ -159,8 +206,9 @@ class ServerListContainer(ui.Container):
         await self.view.render_server_list(page=self.page + 1)
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
 
-    async def _on_inspect_click(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(InspectGuildModal(self.bot, self.view, back_target="server_list"))
+    async def _on_refresh_click(self, interaction: discord.Interaction):
+        await self.view.render_server_list(page=self.page)
+        await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
 
 
 class ServerDossierContainer(ui.Container):
@@ -174,7 +222,15 @@ class ServerDossierContainer(ui.Container):
         self.back_target = back_target
 
         guild_name = target_guild.name if target_guild else f"Server ID {guild_id}"
-        self.add_item(ui.TextDisplay(f"## Server Dossier: {guild_name}"))
+
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay(f"## Server Dossier: {guild_name}\n-# Forensic intelligence, usage volume, and channel stats."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         # 1. Identity & Plan
@@ -226,34 +282,26 @@ class ServerDossierContainer(ui.Container):
         self.add_item(ui.TextDisplay(f"**Top Active Users:**\n{top_u_str}"))
         self.add_item(ui.Separator())
 
-        # Navigation Action Rows
-        nav_row1 = ui.ActionRow()
+        # Navigation Action Row
+        nav_row = ui.ActionRow()
 
         settings_btn = ui.Button(label="Settings ⚙️", style=discord.ButtonStyle.gray)
         settings_btn.callback = self._on_settings_click
-        nav_row1.add_item(settings_btn)
+        nav_row.add_item(settings_btn)
 
         ai_logs_btn = ui.Button(label="AI Query Logs 🤖", style=discord.ButtonStyle.gray)
         ai_logs_btn.callback = self._on_ai_logs_click
-        nav_row1.add_item(ai_logs_btn)
+        nav_row.add_item(ai_logs_btn)
 
         cmd_logs_btn = ui.Button(label="Command Logs 📜", style=discord.ButtonStyle.gray)
         cmd_logs_btn.callback = self._on_cmd_logs_click
-        nav_row1.add_item(cmd_logs_btn)
-
-        self.add_item(nav_row1)
-
-        nav_row2 = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row2.add_item(back_btn)
+        nav_row.add_item(cmd_logs_btn)
 
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
-        nav_row2.add_item(ref_btn)
+        nav_row.add_item(ref_btn)
 
-        self.add_item(nav_row2)
+        self.add_item(nav_row)
 
     async def _on_back_click(self, interaction: discord.Interaction):
         if self.back_target == "server_list":
@@ -286,7 +334,14 @@ class ServerSettingsAuditContainer(ui.Container):
         self.bot = bot
         self.guild_id = guild_id
 
-        self.add_item(ui.TextDisplay("## Server Settings & Audit"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Server Settings & Audit\n-# Runtime configuration and custom system instructions."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         settings = dossier.get("settings", {})
@@ -311,14 +366,17 @@ class ServerSettingsAuditContainer(ui.Container):
         self.add_item(ui.Separator())
 
         nav_row = ui.ActionRow()
-        back_btn = ui.Button(label="< Back to Dossier", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
+        ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_refresh_click
+        nav_row.add_item(ref_btn)
         self.add_item(nav_row)
 
     async def _on_back_click(self, interaction: discord.Interaction):
         await self.view.render_server_dossier(self.guild_id)
+        await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
+    async def _on_refresh_click(self, interaction: discord.Interaction):
+        await self.view.render_server_settings(self.guild_id)
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
 
 
@@ -331,7 +389,14 @@ class ServerAIQueriesContainer(ui.Container):
         self.page = page
         self.total_pages = total_pages
 
-        self.add_item(ui.TextDisplay(f"## Server AI Query Logs\n-# Page {page} of {total_pages} • {total_count:,} Total Queries"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay(f"## Server AI Query Logs\n-# Page {page} of {total_pages} • {total_count:,} Total Queries"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         entries = []
@@ -354,10 +419,6 @@ class ServerAIQueriesContainer(ui.Container):
 
         nav_row = ui.ActionRow()
 
-        back_btn = ui.Button(label="< Back to Dossier", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(page <= 1))
         prev_btn.callback = self._on_prev_click
         nav_row.add_item(prev_btn)
@@ -368,6 +429,10 @@ class ServerAIQueriesContainer(ui.Container):
         next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(page >= total_pages))
         next_btn.callback = self._on_next_click
         nav_row.add_item(next_btn)
+
+        ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_refresh_click
+        nav_row.add_item(ref_btn)
 
         self.add_item(nav_row)
 
@@ -383,6 +448,10 @@ class ServerAIQueriesContainer(ui.Container):
         await self.view.render_server_ai_queries(self.guild_id, page=self.page + 1)
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
 
+    async def _on_refresh_click(self, interaction: discord.Interaction):
+        await self.view.render_server_ai_queries(self.guild_id, page=self.page)
+        await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
 
 class ServerCommandHistoryContainer(ui.Container):
     """Page 1.1.3: Paginated command history for a server."""
@@ -393,7 +462,14 @@ class ServerCommandHistoryContainer(ui.Container):
         self.page = page
         self.total_pages = total_pages
 
-        self.add_item(ui.TextDisplay(f"## Server Command History\n-# Page {page} of {total_pages} • {total_count:,} Total Commands"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay(f"## Server Command History\n-# Page {page} of {total_pages} • {total_count:,} Total Commands"),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         entries = []
@@ -412,10 +488,6 @@ class ServerCommandHistoryContainer(ui.Container):
 
         nav_row = ui.ActionRow()
 
-        back_btn = ui.Button(label="< Back to Dossier", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         prev_btn = ui.Button(label="◀ Prev", style=discord.ButtonStyle.gray, disabled=(page <= 1))
         prev_btn.callback = self._on_prev_click
         nav_row.add_item(prev_btn)
@@ -426,6 +498,10 @@ class ServerCommandHistoryContainer(ui.Container):
         next_btn = ui.Button(label="Next ▶", style=discord.ButtonStyle.gray, disabled=(page >= total_pages))
         next_btn.callback = self._on_next_click
         nav_row.add_item(next_btn)
+
+        ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_refresh_click
+        nav_row.add_item(ref_btn)
 
         self.add_item(nav_row)
 
@@ -439,4 +515,8 @@ class ServerCommandHistoryContainer(ui.Container):
 
     async def _on_next_click(self, interaction: discord.Interaction):
         await self.view.render_server_commands(self.guild_id, page=self.page + 1)
+        await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
+    async def _on_refresh_click(self, interaction: discord.Interaction):
+        await self.view.render_server_commands(self.guild_id, page=self.page)
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())

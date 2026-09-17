@@ -13,15 +13,25 @@ class AnalyticsUptimeContainer(ui.Container):
         self.bot = bot
         self.file = file
 
-        self.add_item(ui.TextDisplay("## Uptime & Availability"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Uptime & Availability\n-# Operational reliability, downtime incidents, and latency health."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
-        uptime_pct, down_minutes = calculate_uptime_stats(hourly_snapshots)
+        uptime_pct, down_minutes, sparkline = calculate_uptime_stats(hourly_snapshots)
 
         if down_minutes == 0:
             status_desc = "🟢 **100% Online** • Zero downtime incidents in 24 hours."
-        else:
+        elif down_minutes < 60:
             status_desc = f"⚠️ **{down_minutes} Minutes Downtime** observed across 24h."
+        else:
+            d_hours, d_mins = divmod(down_minutes, 60)
+            status_desc = f"⚠️ **{d_hours}h {d_mins}m Downtime** observed across 24h." if d_mins else f"⚠️ **{d_hours}h Downtime** observed across 24h."
 
         start_time_str = "Unknown"
         if hasattr(self.bot, "start_time"):
@@ -30,9 +40,10 @@ class AnalyticsUptimeContainer(ui.Container):
         ws_latency = int(self.bot.latency * 1000)
 
         overview_text = (
-            f"**24h Availability:** `{uptime_pct:.2f}%` • {status_desc}\n"
+            f"**24h Availability:** `{uptime_pct:.2f}%` • {sparkline}\n"
+            f"**Status:** {status_desc}\n"
             f"**Current Session:** Online since {start_time_str}\n"
-            f"**Gateway Ping:** `{ws_latency} ms` (WebSocket connection)"
+            f"**Gateway Ping:** `{ws_latency} ms` (Discord WebSocket connection)"
         )
         self.add_item(ui.TextDisplay(overview_text))
         self.add_item(ui.Separator())
@@ -41,17 +52,11 @@ class AnalyticsUptimeContainer(ui.Container):
             self.add_item(ui.MediaGallery(discord.MediaGalleryItem(media=self.file)))
             self.add_item(ui.Separator())
 
-        # Action Buttons
+        # Action Buttons (Refresh)
         nav_row = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
-
         self.add_item(nav_row)
 
     @classmethod

@@ -5,7 +5,7 @@ from ..charts import calculate_uptime_stats
 
 
 class AnalyticsHomeContainer(ui.Container):
-    def __init__(self, bot, stats: dict, guild_count: int, total_members: int, uptime_pct: float = 100.0, down_minutes: int = 0):
+    def __init__(self, bot, stats: dict, guild_count: int, total_members: int, uptime_pct: float = 100.0, down_minutes: int = 0, sparkline: str = "🟩" * 12):
         super().__init__()
         self.bot = bot
 
@@ -49,8 +49,6 @@ class AnalyticsHomeContainer(ui.Container):
             d_hours, d_mins = divmod(down_minutes, 60)
             down_str = f"Down for {d_hours}h {d_mins}m in 24h" if d_mins else f"Down for {d_hours}h in 24h"
 
-        # 12-block 24h sparkline (each block = 2h)
-        sparkline = "🟩" * 12
         uptime_display = ui.TextDisplay(
             f"**Uptime:** `{uptime_pct:.1f}%` • {sparkline}\n"
             f"-# {down_str}"
@@ -101,8 +99,8 @@ class AnalyticsHomeContainer(ui.Container):
         guild_count = len(view.bot.guilds)
         total_members = sum(g.member_count for g in view.bot.guilds if g.member_count)
         snapshots = stats.get("hourly_snapshots", [])
-        uptime_pct, down_minutes = calculate_uptime_stats(snapshots)
-        return cls(view.bot, stats, guild_count, total_members, uptime_pct=uptime_pct, down_minutes=down_minutes)
+        uptime_pct, down_minutes, sparkline = calculate_uptime_stats(snapshots)
+        return cls(view.bot, stats, guild_count, total_members, uptime_pct=uptime_pct, down_minutes=down_minutes, sparkline=sparkline)
 
     async def _on_guilds_click(self, interaction: discord.Interaction):
         await self.view.render_servers()

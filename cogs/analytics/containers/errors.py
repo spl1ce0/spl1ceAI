@@ -3,31 +3,42 @@ from typing import Optional
 import discord
 from discord import ui
 from cogs.utils.constants import Emojis
+from ..charts import generate_errors_chart
 
 
 class AnalyticsErrorsContainer(ui.Container):
     """Page 6.0: Error & Exception Telemetry Tracker."""
-    def __init__(self, bot, data: dict):
+    def __init__(self, bot, data: dict, file: Optional[discord.File] = None):
         super().__init__()
         self.bot = bot
         self.data = data
+        self.file = file
 
-        self.add_item(ui.TextDisplay("## Reliability & Error Tracker"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Reliability & Error Tracker\n-# Real-time exception telemetry and command error analysis."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
-        total_errors = data.get("total_errors_24h", 0)
-        total_commands = data.get("total_commands_24h", 0)
-        success_rate = ((total_commands - total_errors) / total_commands * 100) if total_commands > 0 else 100.0
+        total_errors = data.get("errors_24h", data.get("total_errors_24h", 0))
 
         overview_text = (
             f"**Exceptions (24h):** `{total_errors:,}` incidents\n"
-            f"**Command Reliability:** `{success_rate:.1f}%` success rate across `{total_commands:,}` executions"
+            f"-# Uncaught exceptions and runtime command failures captured by telemetry."
         )
         self.add_item(ui.TextDisplay(overview_text))
         self.add_item(ui.Separator())
 
+        if self.file:
+            self.add_item(ui.MediaGallery(discord.MediaGalleryItem(media=self.file)))
+            self.add_item(ui.Separator())
+
         # Top Error Types Breakdown
-        error_types = data.get("top_error_types", [])
+        error_types = data.get("top_errors", data.get("top_error_types", []))
         type_lines = []
         for etype, cnt in error_types[:5]:
             type_lines.append(f"• `{etype}`: **{cnt:,}** occurrences")
@@ -52,30 +63,24 @@ class AnalyticsErrorsContainer(ui.Container):
         self.add_item(ui.Separator())
 
         # Navigation Action Rows
-        nav_row1 = ui.ActionRow()
+        nav_row = ui.ActionRow()
 
         tb_btn = ui.Button(label="View Latest Traceback 🔍", style=discord.ButtonStyle.gray, disabled=(total_errors == 0))
         tb_btn.callback = self._on_traceback_click
-        nav_row1.add_item(tb_btn)
-
-        self.add_item(nav_row1)
-
-        nav_row2 = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row2.add_item(back_btn)
+        nav_row.add_item(tb_btn)
 
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
-        nav_row2.add_item(ref_btn)
+        nav_row.add_item(ref_btn)
 
-        self.add_item(nav_row2)
+        self.add_item(nav_row)
 
     @classmethod
     async def create(cls, view):
         data = await view.bot.db_manager.get_error_analytics_summary()
-        return cls(view.bot, data)
+        chart_buf = generate_errors_chart(data.get("hourly_errors", []))
+        chart_file = discord.File(chart_buf, filename="errors_chart.png")
+        return cls(view.bot, data, file=chart_file)
 
     async def _on_traceback_click(self, interaction: discord.Interaction):
         await self.view.render_error_traceback()
@@ -96,7 +101,14 @@ class ErrorTracebackContainer(ui.Container):
         super().__init__()
         self.bot = bot
 
-        self.add_item(ui.TextDisplay("## Crash Traceback Inspector"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back to Errors", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Crash Traceback Inspector\n-# Forensic inspection of the most recent uncaught exception."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         if error_row:
@@ -124,10 +136,9 @@ class ErrorTracebackContainer(ui.Container):
         self.add_item(ui.Separator())
 
         nav_row = ui.ActionRow()
-        back_btn = ui.Button(label="< Back to Errors", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
+        ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
+        ref_btn.callback = self._on_refresh_click
+        nav_row.add_item(ref_btn)
         self.add_item(nav_row)
 
     @classmethod
@@ -138,8 +149,12 @@ class ErrorTracebackContainer(ui.Container):
                 "FROM error_telemetry ORDER BY id DESC LIMIT 1"
             )
             row = await cursor.fetchone()
-        return cls(view.bot, error_row=row)
+        return cls(view.bot, row)
 
     async def _on_back_click(self, interaction: discord.Interaction):
         await self.view.render_errors()
+        await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())
+
+    async def _on_refresh_click(self, interaction: discord.Interaction):
+        await self.view.render_error_traceback()
         await interaction.response.edit_message(view=self.view, attachments=self.view.get_current_files())

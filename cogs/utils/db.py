@@ -1126,7 +1126,7 @@ class DatabaseManager:
             }
 
     async def get_error_analytics_summary(self, limit: int = 8) -> dict:
-        """Fetches error breakdown and recent traces."""
+        """Fetches error breakdown, recent traces, and hourly error volume."""
         async with self.db.cursor() as cursor:
             await cursor.execute("SELECT COUNT(*) FROM error_telemetry WHERE timestamp >= datetime('now', '-24 hours')")
             errors_24h = (await cursor.fetchone())[0] or 0
@@ -1137,10 +1137,17 @@ class DatabaseManager:
             await cursor.execute("SELECT command_name, error_type, error_message, timestamp FROM error_telemetry ORDER BY timestamp DESC LIMIT ?", (limit,))
             recent_errors = await cursor.fetchall()
 
+            await cursor.execute(
+                "SELECT strftime('%Y-%m-%d %H:00', timestamp) as hr_bucket, COUNT(*) as cnt "
+                "FROM error_telemetry WHERE timestamp >= datetime('now', '-24 hours') GROUP BY hr_bucket ORDER BY hr_bucket ASC"
+            )
+            hourly_errors = await cursor.fetchall()
+
             return {
                 "errors_24h": errors_24h,
                 "top_errors": top_errors,
-                "recent_errors": recent_errors
+                "recent_errors": recent_errors,
+                "hourly_errors": hourly_errors
             }
 
     async def get_command_analytics_summary(self, limit: int = 8) -> dict:
@@ -1160,10 +1167,33 @@ class DatabaseManager:
 
             return {
                 "total_24h": total_24h,
+                "total_commands_24h": total_24h,
                 "slash_24h": slash_24h,
+                "slash_commands_24h": slash_24h,
                 "top_commands": top_commands,
                 "slowest_commands": slowest_commands
             }
+
+    get_commands_analytics_summary = get_command_analytics_summary
+
+    async def get_server_growth_history(self, timeframe: str = "1d") -> list[tuple]:
+        """Fetches server count history for charts across 1d, 1w, 1m, 1y."""
+        tf_map = {
+            "1d": ("-24 hours", "%Y-%m-%d %H:00"),
+            "1w": ("-7 days", "%Y-%m-%d %H:00"),
+            "1m": ("-30 days", "%Y-%m-%d"),
+            "1y": ("-365 days", "%Y-%W"),
+        }
+        interval, date_fmt = tf_map.get(timeframe.lower(), ("-24 hours", "%Y-%m-%d %H:00"))
+        async with self.db.cursor() as cursor:
+            await cursor.execute(
+                f"SELECT strftime('{date_fmt}', timestamp) as bucket, MAX(guild_count) "
+                f"FROM system_telemetry WHERE timestamp >= datetime('now', '{interval}') "
+                f"GROUP BY bucket ORDER BY bucket ASC"
+            )
+            rows = await cursor.fetchall()
+            return rows
+
 
     async def get_game_analytics_summary(self, limit: int = 8) -> dict:
         """Fetches Connect 4 game statistics."""

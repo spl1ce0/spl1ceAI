@@ -11,16 +11,16 @@ cogs/analytics/
 ├── __init__.py                  # Extension setup entrypoint
 ├── cog.py                       # Analytics(commands.Cog): CLI dispatcher, telemetry collectors, background tasks
 ├── views.py                     # AnalyticsLayoutView: central layout router, navigation stack, and attachment handler
-├── charts.py                    # Matplotlib dark-mode chart generators (uptime sparkline, AI hourly traffic)
+├── charts.py                    # Matplotlib dark-mode chart generators (discordstatus-styled uptime, server growth 1d/1w/1m/1y, 24h AI traffic, 24h error spikes)
 └── containers/                  # Discord Components V2 UI Containers
     ├── __init__.py              # Container exports
-    ├── home.py                  # Minimal analytics home: core pulse (Servers, Users, 24h Uptime) & navigation rows
-    ├── servers.py               # Servers overview, paginated server list, server dossier, settings audit, and server AI logs
-    ├── users.py                 # Users overview, paginated user list, user dossier, global blacklist control, and user AI logs
-    ├── uptime.py                # Dedicated 24h uptime subpage with incident logs & visual sparkline chart
+    ├── home.py                  # Minimal analytics home: core pulse (Servers, Users, 24h dynamic sparkline) & navigation rows
+    ├── servers.py               # Servers overview with 1D/1W/1M/1Y growth chart, paginated server list with 1-click inspect, dossier, settings audit, and server AI logs
+    ├── users.py                 # Users overview, paginated user list with 1-click inspect, dossier, global blacklist control, and user AI logs
+    ├── uptime.py                # Dedicated 24h uptime subpage with incident logs & discordstatus.com style segmented sparkline chart
     ├── ai.py                    # AI token consumption, real-money costs ($), model distribution, and failover incident logs
     ├── system.py                # Real-time VPS diagnostics (psutil CPU, RAM, Disk, SQLite DB size, WebSocket ping)
-    ├── errors.py                # Uncaught exception telemetry, top error types, and full traceback modal/inspector
+    ├── errors.py                # Uncaught exception telemetry, 24h error frequency chart, and full traceback modal/inspector
     ├── activity.py              # Command executions, slash vs prefix ratio, slowest commands, and hourly activity heatmap
     └── modals.py                # Interactive Discord modal inputs (InspectGuildModal, InspectUserModal, BlacklistModal)
 ```

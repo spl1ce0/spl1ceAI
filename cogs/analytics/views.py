@@ -56,14 +56,14 @@ class AnalyticsLayoutView(ui.LayoutView):
         self.add_item(container)
 
     # --- Branch 1: Servers Suite ---
-    async def render_servers(self):
+    async def render_servers(self, timeframe: str = "1d"):
         self.clear_items()
-        container = await AnalyticsServersContainer.create(self)
+        container = await AnalyticsServersContainer.create(self, timeframe=timeframe)
         self.add_item(container)
 
     async def render_server_list(self, page: int = 1):
         self.clear_items()
-        container = ServerListContainer.create(self, page=page, page_size=6)
+        container = ServerListContainer.create(self, page=page, page_size=5)
         self.add_item(container)
 
     async def render_server_dossier(self, guild_id: int, back_target: str = "servers"):
@@ -99,7 +99,7 @@ class AnalyticsLayoutView(ui.LayoutView):
 
     async def render_user_list(self, page: int = 1):
         self.clear_items()
-        container = await UserListContainer.create(self, page=page, page_size=6)
+        container = await UserListContainer.create(self, page=page, page_size=5)
         self.add_item(container)
 
     async def render_user_dossier(self, user_id: int, back_target: str = "users"):

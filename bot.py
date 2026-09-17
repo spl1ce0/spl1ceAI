@@ -49,6 +49,8 @@ class Spl1ceAI(commands.AutoShardedBot):
         self.db_manager = None
         self.settings_cache = {}
         self.blacklist_cache = set()
+        import datetime
+        self.start_time = datetime.datetime.now(datetime.timezone.utc)
 
     async def setup_hook(self) -> None:
         self.db = await asqlite.connect("bot.db")

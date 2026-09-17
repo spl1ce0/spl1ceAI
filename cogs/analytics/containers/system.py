@@ -11,7 +11,14 @@ class AnalyticsSystemContainer(ui.Container):
         super().__init__()
         self.bot = bot
 
-        self.add_item(ui.TextDisplay("## Host & VPS Diagnostics"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## Host & VPS Diagnostics\n-# Real-time hardware utilization, database footprint, and ping."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         cpu_pct = psutil.cpu_percent()
@@ -45,17 +52,11 @@ class AnalyticsSystemContainer(ui.Container):
         self.add_item(ui.TextDisplay(metrics_text))
         self.add_item(ui.Separator())
 
-        # Action Buttons
+        # Action Buttons (Refresh)
         nav_row = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
-
         self.add_item(nav_row)
 
     @classmethod

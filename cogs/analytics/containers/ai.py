@@ -13,7 +13,14 @@ class AnalyticsAIContainer(ui.Container):
         self.bot = bot
         self.file = file
 
-        self.add_item(ui.TextDisplay("## AI Engine Intelligence"))
+        # Header with < Back button on top right
+        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
+        back_btn.callback = self._on_back_click
+        header_section = ui.Section(
+            ui.TextDisplay("## AI Engine Intelligence\n-# Token volume, provider distribution, API costs, and failover health."),
+            accessory=back_btn
+        )
+        self.add_item(header_section)
         self.add_item(ui.Separator())
 
         reqs = data.get("requests_24h", 0)
@@ -25,7 +32,6 @@ class AnalyticsAIContainer(ui.Container):
         failovers = data.get("failovers_24h", 0)
         success_rate = ((reqs - failovers) / reqs * 100) if reqs > 0 else 100.0
 
-        # Estimated cost calculations across providers (~$0.15/1M input, ~$0.60/1M output blend)
         est_cost = (in_tok / 1_000_000 * 0.15) + (out_tok / 1_000_000 * 0.60)
 
         overview_text = (
@@ -69,30 +75,24 @@ class AnalyticsAIContainer(ui.Container):
                 time_str = f"<t:{int(dt_obj.timestamp())}:R>"
             except Exception:
                 time_str = ts
-            failover_lines.append(f"• `{mname}`: *{freason}* - {time_str}")
+            failover_lines.append(f"⚠️ `{mname}` failover: {freason} • {time_str}")
 
-        failover_str = "\n".join(failover_lines) if failover_lines else "• All models operational — `0` failovers in the last 24h."
+        failover_str = "\n".join(failover_lines) if failover_lines else "• All AI providers operational — zero failovers in 24h."
         self.add_item(ui.TextDisplay(f"**Failover Incident Log:**\n{failover_str}"))
         self.add_item(ui.Separator())
 
-        # Action Buttons
+        # Action Buttons (Refresh)
         nav_row = ui.ActionRow()
-
-        back_btn = ui.Button(label="< Back", style=discord.ButtonStyle.gray)
-        back_btn.callback = self._on_back_click
-        nav_row.add_item(back_btn)
-
         ref_btn = ui.Button(emoji=Emojis.RELOAD, style=discord.ButtonStyle.gray)
         ref_btn.callback = self._on_refresh_click
         nav_row.add_item(ref_btn)
-
         self.add_item(nav_row)
 
     @classmethod
     async def create(cls, view):
         data = await view.bot.db_manager.get_ai_analytics_summary()
         chart_buf = generate_ai_traffic_chart(data.get("hourly_traffic", []))
-        chart_file = discord.File(chart_buf, filename="ai_traffic_graph.png")
+        chart_file = discord.File(chart_buf, filename="ai_traffic.png")
         return cls(view.bot, data, file=chart_file)
 
     async def _on_back_click(self, interaction: discord.Interaction):
