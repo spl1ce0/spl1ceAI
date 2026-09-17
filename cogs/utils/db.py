@@ -422,6 +422,17 @@ class DatabaseManager:
             await cursor.execute("SELECT * FROM guild_settings")
             return await cursor.fetchall()
 
+    async def get_guild_settings(self, guild_id: int) -> Optional[dict]:
+        """Fetches live settings for a specific guild from the database."""
+        async with self.db.cursor() as cursor:
+            await cursor.execute("SELECT * FROM guild_settings WHERE guild_id = ?", (guild_id,))
+            row = await cursor.fetchone()
+            if row:
+                data = dict(row)
+                data.pop("guild_id", None)
+                return data
+            return None
+
     async def initialize_default_guild_settings(self, guild_id: int) -> None:
         """Inserts default settings for a newly joined or unconfigured guild."""
         defaults = DefaultSettings.get_defaults_dict()

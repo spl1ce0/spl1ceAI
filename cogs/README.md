@@ -25,6 +25,7 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 | **`logs.py`** | `Logs` | `on_message_delete`, `on_raw_message_delete`, `on_message_edit` | Audit logging sending rich embeds to configured server `logs_channel`. |
 | **`settings.py`** | `Settings` | `/settings` | Interactive server dashboard UI managing prefix, chatbot and chat logs channels (with category indicators), author ping settings, dedicated Bring Your Own Key (BYOK) subpage with toggle, dedicated System Instructions showcase and edit subpage, provider keys modal, model fallback stack configuration, and granular AI reply footer customization with audit telemetry trail (`settings_audit_telemetry`). |
 | **`tools.py`** | `Tools` | `/ytmp3`, `/avatar` | YouTube audio extractor (`yt-dlp` to MP3) and high-resolution user avatar inspector with direct CDN links. |
+| **`dashboard_api.py`** | Module | REST API Endpoints (`/api/*`) | REST endpoints mounted onto `PolarWebhookServer` supplying canonical schemas, active server maps, telemetry quotas, and remote configuration synchronization for the web dashboard. |
 
 ---
 

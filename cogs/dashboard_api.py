@@ -81,14 +81,10 @@ async def verify_user_guild_admin(token: str, guild_id: int, bot) -> bool:
 async def get_guild_settings_dict(bot, guild_id: int) -> dict:
     """Retrieves live settings for a guild, ensuring sync with SQLite database."""
     try:
-        async with bot.db.cursor() as cursor:
-            await cursor.execute("SELECT * FROM guild_settings WHERE guild_id = ?", (guild_id,))
-            row = await cursor.fetchone()
-            if row:
-                data = dict(row)
-                data.pop("guild_id", None)
-                bot.settings_cache[guild_id] = data
-                return data
+        data = await bot.db_manager.get_guild_settings(guild_id)
+        if data:
+            bot.settings_cache[guild_id] = data
+            return data
     except Exception as e:
         logger.error(f"Error fetching settings for guild {guild_id} from DB: {e}")
 
@@ -135,13 +131,12 @@ async def handle_settings_schema(request: web.Request) -> web.Response:
             {
                 "id": "custom_prompt",
                 "category": "ai",
-                "name": "Custom System Instructions",
+                "name": "System Instructions",
                 "description": "Set custom system instructions or guidelines for the AI.",
-                "tag": "Premium / BYOK",
                 "type": "subpage_button",
                 "subpage": "prompt",
                 "accessoryLabel": "Configure",
-                "accessoryIcon": "Edit3",
+                "accessoryIcon": "ChevronRight",
             },
             {
                 "id": "byok",
