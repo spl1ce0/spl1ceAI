@@ -3,7 +3,7 @@ from typing import Optional, List, Union
 import discord
 from discord import ui
 from discord.ext.commands import Context
-from cogs.utils.constants import Emojis
+from cogs.utils.constants import Emojis, URLs, WelcomeMessages
 
 
 class NotificationType(Enum):
@@ -273,3 +273,132 @@ async def _dispatch_card(
         return await target.send(view=view)
     else:
         raise ValueError(f"Unsupported target for card dispatch: {type(target)}")
+
+
+# =========================================================================
+# --- GUILD WELCOME, INVITE & SUPPORT CARDS (DISCORD COMPONENTS V2) ---
+# =========================================================================
+
+def get_bot_invite_url(bot: discord.Client) -> str:
+    """Helper to generate bot OAuth2 invite URL with fallback to URLs.INVITE."""
+    if bot.user:
+        return discord.utils.oauth_url(
+            bot.user.id,
+            permissions=discord.Permissions(8),
+            scopes=("bot", "applications.commands")
+        )
+    return URLs.INVITE
+
+
+class GuildWelcomeContainer(ui.Container):
+    """Discord Components V2 Container for the Guild Welcome message."""
+    def __init__(self, bot: discord.Client):
+        super().__init__()
+
+        # Title Section
+        header_text = f"## {WelcomeMessages.TITLE}\n *I swear I'm not evil.*"
+        
+        self.add_item(ui.TextDisplay(header_text))
+
+        self.add_item(ui.Separator())
+
+        # Steps 1 & 2
+        steps_body = (
+            f"### {WelcomeMessages.STEP_1_TITLE}\n"
+            f"{WelcomeMessages.STEP_1_DESC}\n"
+            f"### {WelcomeMessages.STEP_2_TITLE}\n"
+            f"{WelcomeMessages.STEP_2_DESC}\n"
+            f"### {WelcomeMessages.STEP_3_TITLE}\n"
+        )
+        self.add_item(ui.TextDisplay(steps_body))
+
+        # Step 3 (Web Dashboard Section with Website button accessory)
+        dash_text = (
+            f"{WelcomeMessages.STEP_3_DESC}"
+        )
+        dash_btn = ui.Button(label="Website", url=URLs.WEBSITE, style=discord.ButtonStyle.link)
+        self.add_item(ui.Section(ui.TextDisplay(dash_text), accessory=dash_btn))
+
+        self.add_item(ui.Separator())
+
+        # Footer Section with Support button accessory
+        support_btn = ui.Button(label="Support", url=URLs.SUPPORT, style=discord.ButtonStyle.link)
+        self.add_item(ui.Section(ui.TextDisplay(WelcomeMessages.FOOTER_TEXT), accessory=support_btn))
+
+
+class GuildWelcomeView(ui.LayoutView):
+    """Discord Components V2 LayoutView for guild join welcome messages."""
+    def __init__(self, bot: discord.Client):
+        super().__init__(timeout=None)
+        self.add_item(GuildWelcomeContainer(bot))
+
+
+def build_guild_welcome_card(bot: discord.Client) -> GuildWelcomeView:
+    return GuildWelcomeView(bot)
+
+
+class InviteContainer(ui.Container):
+    """Discord Components V2 Container for the /invite command."""
+    def __init__(self, bot: discord.Client):
+        super().__init__()
+
+        header_text = "### Add spl1ceAI to your server."
+        self.add_item(ui.TextDisplay(header_text))
+
+        invite_url = get_bot_invite_url(bot)
+
+        self.add_item(ui.Separator())
+
+        action_row = ui.ActionRow()
+        inv_btn = ui.Button(label="Add Me", url=invite_url, style=discord.ButtonStyle.link)
+        action_row.add_item(inv_btn)
+        support_btn = ui.Button(label="Support Server", url=URLs.SUPPORT, style=discord.ButtonStyle.link)
+        action_row.add_item(support_btn)
+        dash_btn = ui.Button(label="Website", url=URLs.WEBSITE, style=discord.ButtonStyle.link)
+        action_row.add_item(dash_btn)
+        self.add_item(action_row)
+
+
+class InviteView(ui.LayoutView):
+    """Discord Components V2 LayoutView for the /invite command."""
+    def __init__(self, bot: discord.Client):
+        super().__init__(timeout=None)
+        self.add_item(InviteContainer(bot))
+
+
+def build_invite_card(bot: discord.Client) -> InviteView:
+    return InviteView(bot)
+
+
+class SupportContainer(ui.Container):
+    """Discord Components V2 Container for the /support command."""
+    def __init__(self, bot: discord.Client):
+        super().__init__()
+        # Container color removed per user preference
+
+        header_text = "### Join the support server to get help and updates."
+        self.add_item(ui.TextDisplay(header_text))
+
+        self.add_item(ui.Separator())
+
+        invite_url = get_bot_invite_url(bot)
+        action_row = ui.ActionRow()
+        support_btn = ui.Button(label="Support Server", url=URLs.SUPPORT, style=discord.ButtonStyle.link)
+        action_row.add_item(support_btn)
+        dash_btn = ui.Button(label="Website", url=URLs.WEBSITE, style=discord.ButtonStyle.link)
+        action_row.add_item(dash_btn)
+        inv_btn = ui.Button(label="Add Me", url=invite_url, style=discord.ButtonStyle.link)
+        action_row.add_item(inv_btn)
+        self.add_item(action_row)
+
+
+class SupportView(ui.LayoutView):
+    """Discord Components V2 LayoutView for the /support command."""
+    def __init__(self, bot: discord.Client):
+        super().__init__(timeout=None)
+        self.add_item(SupportContainer(bot))
+
+
+def build_support_card(bot: discord.Client) -> SupportView:
+    return SupportView(bot)
+

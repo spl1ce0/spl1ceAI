@@ -505,6 +505,14 @@ class Dev(cmds.Cog):
             ephemeral=True
         )
 
+    @cmds.hybrid_command(name="testwelcome")
+    @cmds.is_owner()
+    async def test_welcome(self, ctx: Context):
+        """[Owner Only] Previews the guild join welcome card."""
+        from cogs.utils.cards import build_guild_welcome_card
+        view = build_guild_welcome_card(self.bot)
+        await ctx.reply(view=view, ephemeral=True)
+
 
 class LogFileSelect(discord.ui.Select):
     def __init__(self, current_file):

@@ -18,13 +18,13 @@ This directory contains all the Discord command cogs and extensions loaded by `b
 
 | Cog File | Class Name | Key Commands / Listeners | Description |
 | :--- | :--- | :--- | :--- |
-| **`dev.py`** | `Dev` | `!alive`, `!ext`, `!update (bot/web)`, `!restart`, `!commands`, `!logs`, `!inspect`, `!inspectguild`, `!blacklist`, `!unblacklist`, `/givemoney` | Owner-only maintenance commands, extension hot-reloading, tree syncing, interactive log viewer, forensic text log exporter, global blacklist controls, wallet balance adjustments, and direct delegation to the analytics intelligence suite. |
+| **`dev.py`** | `Dev` | `!alive`, `!ext`, `!update (bot/web)`, `!restart`, `!commands`, `!logs`, `!inspect`, `!inspectguild`, `!testwelcome`, `!blacklist`, `!unblacklist`, `/givemoney` | Owner-only maintenance commands, extension hot-reloading, tree syncing, interactive log viewer, forensic text log exporter, global blacklist controls, wallet balance adjustments, guild welcome card preview, and direct delegation to the analytics intelligence suite. |
 | **`errors.py`** | `ErrorHandler` | `on_app_command_error`, `on_command_error` | Central error handler translating exceptions into Discord Components V2 `ErrorCardView` container cards with actionable buttons, dynamic countdowns, incident IDs, and telemetry recording in `error_telemetry`. |
 | **`fun.py`** | `Fun` | `/sealion`, `/anoomals`, `/ban`, `/quote` | Random TikTok video scrapers/downloaders (`yt-dlp`), fake ban UI container card, and dynamic image quote card generation (Pillow + Pilmoji). |
 | **`help.py`** | `Help` | `/help` (`/h`, `/cmds`, `/bothelp`) | Dynamic 2-level interactive command center with category browsing, detailed command inspector, permissions badging, and owner-only dev category filtering. |
 | **`logs.py`** | `Logs` | `on_message_delete`, `on_raw_message_delete`, `on_message_edit` | Audit logging sending rich embeds to configured server `logs_channel`. |
 | **`settings.py`** | `Settings` | `/settings` | Interactive server dashboard UI managing prefix, chatbot and chat logs channels (with category indicators), author ping settings, dedicated Bring Your Own Key (BYOK) subpage with toggle, dedicated System Instructions showcase and edit subpage, provider keys modal, model fallback stack configuration, and granular AI reply footer customization with audit telemetry trail (`settings_audit_telemetry`). |
-| **`tools.py`** | `Tools` | `/ytmp3`, `/avatar` | YouTube audio extractor (`yt-dlp` to MP3) and high-resolution user avatar inspector with direct CDN links. |
+| **`tools.py`** | `Tools` | `/ytmp3`, `/avatar`, `/invite`, `/support` | YouTube audio extractor (`yt-dlp` to MP3), high-resolution user avatar inspector, bot OAuth2 invite card, and community support card. |
 | **`dashboard_api.py`** | Module | REST API Endpoints (`/api/*`) | REST endpoints mounted onto `PolarWebhookServer` supplying canonical schemas, active server maps, telemetry quotas, and remote configuration synchronization for the web dashboard. |
 
 ---

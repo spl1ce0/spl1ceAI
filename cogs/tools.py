@@ -140,5 +140,20 @@ class Tools(commands.Cog):
         
         await ctx.reply(view=view)
 
+    @commands.hybrid_command(name="invite", aliases=["addbot", "add"])
+    async def invite(self, ctx):
+        """Get the official invite link to add spl1ceAI to your server."""
+        from cogs.utils.cards import build_invite_card
+        view = build_invite_card(self.bot)
+        await ctx.reply(view=view, mention_author=False)
+
+    @commands.hybrid_command(name="support", aliases=["helpdesk", "community"])
+    async def support(self, ctx):
+        """Get the link to the official spl1ceAI support and community server."""
+        from cogs.utils.cards import build_support_card
+        view = build_support_card(self.bot)
+        await ctx.reply(view=view, mention_author=False)
+
+
 async def setup(bot):
     await bot.add_cog(Tools(bot))

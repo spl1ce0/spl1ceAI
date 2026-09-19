@@ -134,6 +134,31 @@ class Spl1ceAI(commands.AutoShardedBot):
         log.info(f"Joined new guild: {guild.name} ({guild.id})")
         await self.db_manager.initialize_default_guild_settings(guild.id)
         self.settings_cache[guild.id] = DefaultSettings.get_defaults_dict()
+        await self.send_guild_welcome(guild)
+
+    async def send_guild_welcome(self, guild: discord.Guild) -> None:
+        """Sends the Discord Components V2 welcome message to the guild upon joining."""
+        try:
+            target_channel = None
+            if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
+                target_channel = guild.system_channel
+            else:
+                for channel in guild.text_channels:
+                    perms = channel.permissions_for(guild.me)
+                    if perms.send_messages and perms.view_channel:
+                        target_channel = channel
+                        break
+
+            from cogs.utils.cards import build_guild_welcome_card
+            view = build_guild_welcome_card(self)
+
+            if target_channel:
+                await target_channel.send(view=view)
+            elif guild.owner:
+                await guild.owner.send(view=view)
+        except Exception as e:
+            log.error(f"Failed to send welcome message to guild {guild.id}: {e}")
+
 
     async def close(self) -> None:
         if self.db:

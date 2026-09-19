@@ -153,6 +153,18 @@ class URLs:
     SUPPORT = "https://discord.gg/vNKEJ35esU"
 
 
+class WelcomeMessages:
+    TITLE = "Thank you for adding me!"
+    STEP_1_TITLE = "Configure Your Server"
+    STEP_1_DESC = "Run **/settings** to set a dedicated AI chatbot channel, change the command prefix and more."
+    STEP_2_TITLE = "Explore Commands"
+    STEP_2_DESC = "Type **/help** to browse available command by their categories."
+    STEP_3_TITLE = "Website"
+    STEP_3_DESC = f"Manage your server settings remotely from your browser at **{URLs.WEBSITE}**."
+    FOOTER_TEXT = "Need support or have feature suggestions?"
+
+
+
 class DefaultSettings:
     PREFIX = "!"
     CBC = None
