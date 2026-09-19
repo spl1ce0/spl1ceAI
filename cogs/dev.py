@@ -27,13 +27,6 @@ class Dev(cmds.Cog):
         self.bot = bot
 
 
-    @cmds.hybrid_command(name="are_you_alive", aliases=["alive", "are_u_alive", "areualive"])
-    async def alive(self, ctx):
-        """Tells if the bot is alive."""
-
-        await ctx.reply(f"Yes I'm alive, broski. {Emojis.YELLOW_LOOK}")
-
-
     @cmds.group(name='extensions', aliases=['ext'])
     @cmds.is_owner()
     async def extensions(self, ctx: Context):

@@ -60,6 +60,11 @@ class Fun(commands.Cog):
             }
         }
 
+    @commands.hybrid_command(name="are_you_alive", aliases=["alive", "are_u_alive", "areualive"])
+    async def are_you_alive(self, ctx):
+        """Tells if the bot is alive."""
+        await ctx.reply(f"Yes I'm alive, broski. {Emojis.YELLOW_LOOK}")
+
     async def _send_random_tiktok(self, ctx, collection_url: str, command_name: str, emoji: str):
         await ctx.defer()
         

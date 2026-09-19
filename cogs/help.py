@@ -163,7 +163,7 @@ class HelpCategoryContainer(ui.Container):
                     perm_badge = f" • `{perms}`"
 
                 cmd_display = ui.TextDisplay(
-                    f"**`{usage_str}`**{perm_badge}\n"
+                    f"**{usage_str}**{perm_badge}\n"
                     f"-# {short_desc}"
                 )
                 inspect_btn = ui.Button(emoji=Emojis.ARROW, style=discord.ButtonStyle.gray)
@@ -231,14 +231,14 @@ class HelpCommandInspectorContainer(ui.Container):
         desc = self.cmd.description or self.cmd.help or "No description provided."
         usage_str, params = get_command_signature(self.cmd)
         aliases = getattr(self.cmd, "aliases", [])
-        aliases_str = ", ".join([f"`/{a}`" for a in aliases]) if aliases else "None"
+        aliases_str = ", ".join([f"/{a}" for a in aliases]) if aliases else "None"
         perms_str = get_command_permissions(self.cmd)
 
         params_text = "\n".join(params) if params else "*No parameters required.*"
 
         content = (
             f"**Description**\n{desc}\n\n"
-            f"**Usage**\n`{usage_str}`\n\n"
+            f"**Usage**\n{usage_str}\n\n"
             f"**Parameters**\n{params_text}\n\n"
             f"**Aliases**\n{aliases_str}\n\n"
             f"**Permissions**\n{perms_str}"
