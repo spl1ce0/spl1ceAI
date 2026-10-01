@@ -2,7 +2,7 @@
 
 # 🤖 spl1ceAI
 
-**A multi-model Discord AI bot built for speed, reliability, and fun.**
+**A Discord bot with a personality and fun features.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Discord.py](https://img.shields.io/badge/Discord.py-2.6%2B-5865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://github.com/Rapptz/discord.py)
@@ -15,11 +15,8 @@
 
 ## 📖 About
 
-**spl1ceAI** is a self-hostable Discord bot designed to make chatting with AI seamless in your server.
-
-Instead of relying on a single API that might go down or hit rate limits, it uses an automatic failover system across multiple providers (Gemini, OpenAI, Claude, and Grok). If your primary model is busy or down, it instantly falls back to the next one without interrupting the conversation.
-
-On top of AI chat, it includes interactive games like Connect 4 (with an AI opponent), media tools, server logging, and an in-Discord settings dashboard.
+**spl1ceAI** is a Discord bot with AI related features, including an AI chatbot (powered by the support of several models from different providers), a Connect 4 agent with different difficulty levels, more minigames and tools.
+It is designed to be self-hostable by anyone and easy to operate.
 
 ---
 
