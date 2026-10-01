@@ -16,6 +16,7 @@
 ## 📖 About
 
 **spl1ceAI** is a Discord bot with AI related features, including an AI chatbot (powered by the support of several models from different providers), a Connect 4 agent with different difficulty levels, more minigames and tools.
+
 It is designed to be self-hostable by anyone and easy to operate.
 
 ---
