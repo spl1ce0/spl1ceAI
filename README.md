@@ -73,6 +73,7 @@ python3 bot.py
 | `OPENAI_API_KEY` | OpenAI API key (Optional) |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API key (Optional) |
 | `XAI_API_KEY` | xAI Grok API key (Optional) |
+| `GITHUB_TOKEN` | GitHub fine-grained PAT with **Issues (Read and write)** scope on `spl1ce0/spl1ceAI` for the owner-only `/idea` command (Optional) |
 
 ---
 

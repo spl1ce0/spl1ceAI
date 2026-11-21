@@ -22,7 +22,9 @@ from cogs.utils.exceptions import (
     ToolError,
     InvalidURLError,
     MediaTooLongError,
-    MediaDownloadError
+    MediaDownloadError,
+    GitHubError,
+    GitHubConfigError,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,6 +209,20 @@ def build_user_not_found_card(arg: str) -> ErrorCardView:
     )
 
 
+def build_github_error_card(error: GitHubError) -> ErrorCardView:
+    if isinstance(error, GitHubConfigError):
+        return ErrorCardView(
+            title="❌ GitHub Configuration Error",
+            description=str(error),
+            details="-# Configure `GITHUB_TOKEN` with Issues (Read and write) access on `spl1ce0/spl1ceAI`."
+        )
+    return ErrorCardView(
+        title="❌ GitHub API Error",
+        description=str(error),
+        details="-# Please try again in a moment."
+    )
+
+
 # =========================================================================
 # --- ERROR HANDLER COG ---
 # =========================================================================
@@ -268,6 +284,8 @@ class ErrorHandler(commands.Cog):
             view = build_user_not_found_card(getattr(error, "argument", "user"))
         elif isinstance(error, ToolError):
             view = build_tool_error_card(error)
+        elif isinstance(error, GitHubError):
+            view = build_github_error_card(error)
         else:
             # Uncaught slash command error
             logger.error(f"Slash command error [{incident_id}]: {error}", exc_info=error)
@@ -325,7 +343,10 @@ class ErrorHandler(commands.Cog):
         if hasattr(ctx.command, 'on_error'):
             return
 
-        if isinstance(error, commands.CommandInvokeError):
+        if isinstance(error, commands.HybridCommandError):
+            error = error.original
+
+        if isinstance(error, (commands.CommandInvokeError, app_commands.CommandInvokeError)):
             error = error.original
 
         if isinstance(error, app_commands.AppCommandError):
@@ -368,6 +389,8 @@ class ErrorHandler(commands.Cog):
             view = build_user_not_found_card(getattr(error, "argument", "user"))
         elif isinstance(error, ToolError):
             view = build_tool_error_card(error)
+        elif isinstance(error, GitHubError):
+            view = build_github_error_card(error)
         else:
             logger.error(f"Prefix command error [{incident_id}]: {error}", exc_info=error)
             view = build_unexpected_card(incident_id)
@@ -408,7 +431,10 @@ class ErrorHandler(commands.Cog):
                 logger.error(f"Failed to log prefix error telemetry: {e}")
 
         try:
-            await ctx.reply(view=view)
+            if isinstance(error, GitHubError):
+                await ctx.reply(view=view, ephemeral=True)
+            else:
+                await ctx.reply(view=view)
         except Exception as e:
             logger.error(f"Failed to send prefix error view: {e}")
 

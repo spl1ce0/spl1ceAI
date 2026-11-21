@@ -87,3 +87,25 @@ class MediaDownloadError(ToolError):
     def __init__(self, message: str = "Failed to download or process media file."):
         super().__init__(message)
 
+
+# =========================================================================
+# --- GITHUB INTEGRATION ERRORS ---
+# =========================================================================
+
+class GitHubError(BotError):
+    """Base exception for GitHub API integration errors."""
+    pass
+
+
+class GitHubConfigError(GitHubError):
+    """Raised when GitHub credentials or permissions are missing or invalid."""
+    pass
+
+
+class GitHubAPIError(GitHubError):
+    """Raised when a GitHub REST API request fails."""
+    def __init__(self, message: str, status: typing.Optional[int] = None):
+        super().__init__(message)
+        self.status = status
+
+
