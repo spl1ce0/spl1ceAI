@@ -35,7 +35,7 @@ POLAR_WEBHOOK_SECRET=your_polar_webhook_secret_here
 POLAR_ORGANIZATION_SLUG=spl1ceai
 ```
 
-`POLAR_API_KEY` is accepted as an alias of `POLAR_ACCESS_TOKEN`. `.env.example` still documents `LEMONSQUEEZY_*` keys. No billing module reads those names.
+`POLAR_API_KEY` is accepted as an alias of `POLAR_ACCESS_TOKEN`.
 
 The checkout amount is whatever Polar has on `POLAR_PRODUCT_ID`. The Discord pager hardcodes `2.99€ / month`, which matches `DefaultSettings.PREMIUM_PRICE_EUR`. The same pager's image and context lines do not match `check_ai_quota_allowance`. See `cogs/ai/README.md` for the enforced limits versus the strings in `cogs/billing/cog.py` and `cogs/settings.py`.
 

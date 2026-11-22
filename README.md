@@ -57,7 +57,7 @@ pip install -r requirements.txt
 
 # 4. Configure environment variables
 # .env.example is a starting file only. Add the keys in the table below
-# that the example does not list (Polar, DeepSeek, GLM, and the aliases).
+# that the example does not list (DeepSeek, GLM, POLAR_ORGANIZATION_SLUG, and the aliases).
 cp .env.example .env
 nano .env
 
@@ -69,7 +69,7 @@ python3 bot.py
 
 ## ⚙️ Configuration (`.env`)
 
-Names below are the ones `os.getenv` actually reads. `.env.example` is older: it still lists `PORT` and `LEMONSQUEEZY_*`, and it omits Polar, DeepSeek, and GLM. The process does not read `PORT` or any `LEMONSQUEEZY_*` variable. The billing HTTP server binds `DefaultSettings.WEBHOOK_PORT` (`8080` in `cogs/utils/constants.py`).
+Names below are the ones `os.getenv` actually reads. `.env.example` lists the core Discord, AI, and Polar keys (`POLAR_ACCESS_TOKEN`, `POLAR_PRODUCT_ID`, `POLAR_WEBHOOK_SECRET`), still lists `PORT`, and omits `POLAR_ORGANIZATION_SLUG`, DeepSeek, and GLM. The process does not read `PORT`. The billing HTTP server binds `DefaultSettings.WEBHOOK_PORT` (`8080` in `cogs/utils/constants.py`).
 
 | Variable | Description |
 | :--- | :--- |
