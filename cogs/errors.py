@@ -343,17 +343,23 @@ class ErrorHandler(commands.Cog):
         if hasattr(ctx.command, 'on_error'):
             return
 
-        if isinstance(error, commands.HybridCommandError):
+        from_hybrid = isinstance(error, commands.HybridCommandError)
+        if from_hybrid:
             error = error.original
 
         if isinstance(error, (commands.CommandInvokeError, app_commands.CommandInvokeError)):
             error = error.original
 
-        if isinstance(error, app_commands.AppCommandError):
+        if isinstance(error, app_commands.AppCommandError) and not from_hybrid:
             return
 
         # Silently ignore command not found and dev/owner check failures to prevent giving away command existence
-        if isinstance(error, (commands.CommandNotFound, commands.NotOwner, app_commands.CheckFailure)):
+        if isinstance(error, (commands.CommandNotFound, commands.NotOwner)):
+            return
+        if isinstance(error, app_commands.CheckFailure) and not isinstance(
+            error,
+            (app_commands.CommandOnCooldown, app_commands.MissingPermissions, app_commands.BotMissingPermissions),
+        ):
             return
 
         incident_id = f"ERR-{uuid.uuid4().hex[:6].upper()}"
@@ -361,15 +367,15 @@ class ErrorHandler(commands.Cog):
         cmd_name = ctx.command.qualified_name if ctx.command else "command"
         sig = ctx.command.signature if ctx.command else ""
 
-        if isinstance(error, commands.CommandOnCooldown):
+        if isinstance(error, (commands.CommandOnCooldown, app_commands.CommandOnCooldown)):
             view = build_cooldown_card(error.retry_after)
-        elif isinstance(error, commands.MissingPermissions):
+        elif isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
             view = build_permissions_card(error.missing_permissions, is_bot=False)
-        elif isinstance(error, commands.BotMissingPermissions):
+        elif isinstance(error, (commands.BotMissingPermissions, app_commands.BotMissingPermissions)):
             view = build_permissions_card(error.missing_permissions, is_bot=True)
         elif isinstance(error, commands.MissingRequiredArgument):
             view = build_missing_arg_card(error.param.name, prefix, cmd_name, sig)
-        elif isinstance(error, commands.BadArgument):
+        elif isinstance(error, (commands.BadArgument, app_commands.TransformerError)):
             view = build_bad_arg_card(prefix, cmd_name, sig)
         elif isinstance(error, AIQuotaReachedError):
             guild_id = ctx.guild.id if ctx.guild else None

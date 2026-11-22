@@ -344,6 +344,60 @@ class TestIdeaCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(view, ErrorCardView)
         self.assertIn("GITHUB_TOKEN is not configured.", _extract_view_text(view))
 
+    async def test_error_handler_renders_wrapped_hybrid_app_command_cooldown(self):
+        bot = MagicMock()
+        bot.tree = MagicMock()
+        handler = ErrorHandler(bot)
+
+        ctx = MagicMock()
+        ctx.command = MagicMock(spec=["qualified_name", "signature"])
+        ctx.command.qualified_name = "ytmp3"
+        ctx.command.signature = "<url>"
+        ctx.cog = MagicMock()
+        ctx.cog.qualified_name = "Dev"
+        ctx.prefix = "/"
+        ctx.reply = AsyncMock()
+
+        cooldown_err = app_commands.CommandOnCooldown(app_commands.Cooldown(1, 10.0), retry_after=4.5)
+        wrapped = commands.HybridCommandError(cooldown_err)
+
+        await handler.on_command_error(ctx, wrapped)
+
+        ctx.reply.assert_awaited_once()
+        view = ctx.reply.call_args.kwargs.get("view")
+        self.assertIsInstance(view, ErrorCardView)
+        text = _extract_view_text(view)
+        self.assertIn("Command on Cooldown", text)
+        self.assertIn("4.5s", text)
+
+    async def test_error_handler_renders_wrapped_hybrid_transformer_error(self):
+        bot = MagicMock()
+        bot.tree = MagicMock()
+        handler = ErrorHandler(bot)
+
+        ctx = MagicMock()
+        ctx.command = MagicMock(spec=["qualified_name", "signature"])
+        ctx.command.qualified_name = "givemoney"
+        ctx.command.signature = "<user> <amount>"
+        ctx.cog = MagicMock()
+        ctx.cog.qualified_name = "Dev"
+        ctx.prefix = "/"
+        ctx.reply = AsyncMock()
+
+        transformer_err = app_commands.TransformerError(
+            "not-a-number",
+            discord.AppCommandOptionType.integer,
+            MagicMock(),
+        )
+        wrapped = commands.HybridCommandError(transformer_err)
+
+        await handler.on_command_error(ctx, wrapped)
+
+        ctx.reply.assert_awaited_once()
+        view = ctx.reply.call_args.kwargs.get("view")
+        self.assertIsInstance(view, ErrorCardView)
+        self.assertIn("Invalid Argument Passed", _extract_view_text(view))
+
     async def test_app_command_error_handler_renders_github_api_error(self):
         bot = MagicMock()
         bot.tree = MagicMock()
