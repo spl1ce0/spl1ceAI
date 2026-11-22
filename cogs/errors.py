@@ -22,7 +22,9 @@ from cogs.utils.exceptions import (
     ToolError,
     InvalidURLError,
     MediaTooLongError,
-    MediaDownloadError
+    MediaDownloadError,
+    GitHubError,
+    GitHubConfigError,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,6 +209,20 @@ def build_user_not_found_card(arg: str) -> ErrorCardView:
     )
 
 
+def build_github_error_card(error: GitHubError) -> ErrorCardView:
+    if isinstance(error, GitHubConfigError):
+        return ErrorCardView(
+            title="❌ GitHub Configuration Error",
+            description=str(error),
+            details="-# Configure `GITHUB_TOKEN` with Issues (Read and write) access on `spl1ce0/spl1ceAI`."
+        )
+    return ErrorCardView(
+        title="❌ GitHub API Error",
+        description=str(error),
+        details="-# Please try again in a moment."
+    )
+
+
 # =========================================================================
 # --- ERROR HANDLER COG ---
 # =========================================================================
@@ -268,6 +284,8 @@ class ErrorHandler(commands.Cog):
             view = build_user_not_found_card(getattr(error, "argument", "user"))
         elif isinstance(error, ToolError):
             view = build_tool_error_card(error)
+        elif isinstance(error, GitHubError):
+            view = build_github_error_card(error)
         else:
             # Uncaught slash command error
             logger.error(f"Slash command error [{incident_id}]: {error}", exc_info=error)
@@ -325,14 +343,23 @@ class ErrorHandler(commands.Cog):
         if hasattr(ctx.command, 'on_error'):
             return
 
-        if isinstance(error, commands.CommandInvokeError):
+        from_hybrid = isinstance(error, commands.HybridCommandError)
+        if from_hybrid:
             error = error.original
 
-        if isinstance(error, app_commands.AppCommandError):
+        if isinstance(error, (commands.CommandInvokeError, app_commands.CommandInvokeError)):
+            error = error.original
+
+        if isinstance(error, app_commands.AppCommandError) and not from_hybrid:
             return
 
         # Silently ignore command not found and dev/owner check failures to prevent giving away command existence
-        if isinstance(error, (commands.CommandNotFound, commands.NotOwner, app_commands.CheckFailure)):
+        if isinstance(error, (commands.CommandNotFound, commands.NotOwner)):
+            return
+        if isinstance(error, app_commands.CheckFailure) and not isinstance(
+            error,
+            (app_commands.CommandOnCooldown, app_commands.MissingPermissions, app_commands.BotMissingPermissions),
+        ):
             return
 
         incident_id = f"ERR-{uuid.uuid4().hex[:6].upper()}"
@@ -340,15 +367,15 @@ class ErrorHandler(commands.Cog):
         cmd_name = ctx.command.qualified_name if ctx.command else "command"
         sig = ctx.command.signature if ctx.command else ""
 
-        if isinstance(error, commands.CommandOnCooldown):
+        if isinstance(error, (commands.CommandOnCooldown, app_commands.CommandOnCooldown)):
             view = build_cooldown_card(error.retry_after)
-        elif isinstance(error, commands.MissingPermissions):
+        elif isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
             view = build_permissions_card(error.missing_permissions, is_bot=False)
-        elif isinstance(error, commands.BotMissingPermissions):
+        elif isinstance(error, (commands.BotMissingPermissions, app_commands.BotMissingPermissions)):
             view = build_permissions_card(error.missing_permissions, is_bot=True)
         elif isinstance(error, commands.MissingRequiredArgument):
             view = build_missing_arg_card(error.param.name, prefix, cmd_name, sig)
-        elif isinstance(error, commands.BadArgument):
+        elif isinstance(error, (commands.BadArgument, app_commands.TransformerError)):
             view = build_bad_arg_card(prefix, cmd_name, sig)
         elif isinstance(error, AIQuotaReachedError):
             guild_id = ctx.guild.id if ctx.guild else None
@@ -368,6 +395,8 @@ class ErrorHandler(commands.Cog):
             view = build_user_not_found_card(getattr(error, "argument", "user"))
         elif isinstance(error, ToolError):
             view = build_tool_error_card(error)
+        elif isinstance(error, GitHubError):
+            view = build_github_error_card(error)
         else:
             logger.error(f"Prefix command error [{incident_id}]: {error}", exc_info=error)
             view = build_unexpected_card(incident_id)
@@ -408,7 +437,10 @@ class ErrorHandler(commands.Cog):
                 logger.error(f"Failed to log prefix error telemetry: {e}")
 
         try:
-            await ctx.reply(view=view)
+            if isinstance(error, GitHubError):
+                await ctx.reply(view=view, ephemeral=True)
+            else:
+                await ctx.reply(view=view)
         except Exception as e:
             logger.error(f"Failed to send prefix error view: {e}")
 

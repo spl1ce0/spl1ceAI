@@ -69,7 +69,7 @@ python3 bot.py
 
 ## ⚙️ Configuration (`.env`)
 
-Names below are the ones `os.getenv` actually reads. `.env.example` lists the core Discord, AI, and Polar keys (`POLAR_ACCESS_TOKEN`, `POLAR_PRODUCT_ID`, `POLAR_WEBHOOK_SECRET`), still lists `PORT`, and omits `POLAR_ORGANIZATION_SLUG`, DeepSeek, and GLM. The process does not read `PORT`. The billing HTTP server binds `DefaultSettings.WEBHOOK_PORT` (`8080` in `cogs/utils/constants.py`).
+Names below are the ones `os.getenv` actually reads. `.env.example` lists the core Discord, AI, Polar (`POLAR_ACCESS_TOKEN`, `POLAR_PRODUCT_ID`, `POLAR_WEBHOOK_SECRET`), and GitHub (`GITHUB_TOKEN`) keys, still lists `PORT`, and omits `POLAR_ORGANIZATION_SLUG`, DeepSeek, and GLM. The process does not read `PORT`. The billing HTTP server binds `DefaultSettings.WEBHOOK_PORT` (`8080` in `cogs/utils/constants.py`).
 
 | Variable | Description |
 | :--- | :--- |
@@ -85,6 +85,7 @@ Names below are the ones `os.getenv` actually reads. `.env.example` lists the co
 | `POLAR_PRODUCT_ID` | Polar product used when creating a checkout. |
 | `POLAR_WEBHOOK_SECRET` | Standard Webhooks signing secret. If it is unset, signature verification is skipped and the webhook handler accepts the body. |
 | `POLAR_ORGANIZATION_SLUG` | Portal slug. Defaults to `spl1ceai` when unset. |
+| `GITHUB_TOKEN` | GitHub fine-grained PAT with Issues (Read and write) permission on `spl1ce0/spl1ceAI` for the owner-only `/idea` command. |
 
 The in-bot Premium label is `2.99€` (`DefaultSettings.PREMIUM_PRICE_EUR`). What customers are charged is the price of `POLAR_PRODUCT_ID` in Polar, which this repository does not set.
 

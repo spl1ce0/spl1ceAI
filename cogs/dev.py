@@ -3,7 +3,8 @@ from discord.ext.commands import Context, GuildConverter
 
 import discord
 from cogs.utils.constants import Emojis
-from cogs.utils.cards import send_confirmation, send_info, send_warning
+from cogs.utils.cards import build_confirmation_card, send_confirmation, send_info, send_warning
+from cogs.utils.github import IDEA_LABEL, IDEA_REPO, create_idea_issue
 from discord import ui
 import typing
 from typing import Optional
@@ -25,6 +26,7 @@ class Dev(cmds.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self.idea._is_owner = True
 
 
     @cmds.group(name='extensions', aliases=['ext'])
@@ -504,6 +506,37 @@ class Dev(cmds.Cog):
         """[Owner Only] Previews the guild join welcome card."""
         from cogs.utils.cards import build_guild_welcome_card
         view = build_guild_welcome_card(self.bot)
+        await ctx.reply(view=view, ephemeral=True)
+
+    @cmds.hybrid_command(name="idea")
+    @discord.app_commands.describe(text="The project idea to file as a GitHub issue on spl1ce0/spl1ceAI")
+    async def idea(self, ctx: Context, *, text: str):
+        """[Owner Only] Files a project idea as a GitHub issue on spl1ce0/spl1ceAI."""
+        if not await self.bot.is_owner(ctx.author):
+            await ctx.reply(f"{Emojis.ERROR} Only the bot owner can use `/idea`.", ephemeral=True)
+            return
+
+        cleaned = text.strip()
+        if not cleaned:
+            await ctx.reply(f"{Emojis.WARNING} Please provide some text for the idea.", ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+
+        issue = await create_idea_issue(self.bot.web_client, cleaned)
+
+        open_btn = ui.Button(label="Open Issue", url=issue.url, style=discord.ButtonStyle.link)
+        footer = (
+            f"Repository: {IDEA_REPO} • Label: {IDEA_LABEL}"
+            if issue.labeled
+            else f"Repository: {IDEA_REPO} • Created without '{IDEA_LABEL}' label"
+        )
+        view = build_confirmation_card(
+            title=f"Idea Filed (#{issue.number})",
+            description=f"**{issue.title}**\n{issue.url}",
+            footer=footer,
+            buttons=[open_btn],
+        )
         await ctx.reply(view=view, ephemeral=True)
 
 
