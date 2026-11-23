@@ -439,7 +439,7 @@ class DatabaseManager:
         columns = ["guild_id"] + list(defaults.keys())
         placeholders = ", ".join(["?"] * len(columns))
         col_names = ", ".join(columns)
-        values = [guild_id] + list(defaults.values())
+        values = (guild_id, *defaults.values())
 
         async with self.db.cursor() as cursor:
             await cursor.execute(
