@@ -437,10 +437,7 @@ class ErrorHandler(commands.Cog):
                 logger.error(f"Failed to log prefix error telemetry: {e}")
 
         try:
-            if isinstance(error, GitHubError):
-                await ctx.reply(view=view, ephemeral=True)
-            else:
-                await ctx.reply(view=view)
+            await ctx.reply(view=view)
         except Exception as e:
             logger.error(f"Failed to send prefix error view: {e}")
 

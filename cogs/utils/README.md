@@ -10,7 +10,7 @@ This package contains shared system infrastructure, asynchronous database manage
 * **`constants.py`**: Global UI constants, custom emojis (`Emojis`), domain URLs (`URLs`), onboarding copy (`WelcomeMessages`), error message formatters (`ErrorMessages`), and default configuration values (`DefaultSettings`).
 * **`cards.py` (`NotificationCardView`)**: Discord Components V2 notification card framework providing notification builders (`build_confirmation_card`, `build_info_card`, `build_warning_card`, `build_progress_card`), onboarding cards (`build_guild_welcome_card`, `build_invite_card`, `build_support_card`), and unified async dispatchers (`send_confirmation`, `send_info`, `send_warning`) with color-accented containers and action buttons.
 * **`exceptions.py`**: Custom domain exceptions inheriting from `BotError` across AI (`AIError`, `AIQuotaReachedError`), Economy (`EconomyError`, `InsufficientBalanceError`, `DailyAlreadyClaimedError`), Tools (`ToolError`, `InvalidURLError`, `MediaTooLongError`, `MediaDownloadError`), and GitHub (`GitHubError`, `GitHubConfigError`, `GitHubAPIError`).
-* **`github.py`**: GitHub REST API helper (`create_idea_issue`, `build_idea_title`, `build_idea_body`) used by the owner-only `/idea` command to file labeled issues on `spl1ce0/spl1ceAI` via `aiohttp`.
+* **`github.py`**: GitHub REST API helper (`create_idea_issue`, `build_idea_title`, `build_idea_body`) used by the owner-only `!idea` command to file labeled issues on `spl1ce0/spl1ceAI` via `aiohttp`.
 
 ---
 

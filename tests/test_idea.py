@@ -90,7 +90,7 @@ class TestIdeaFormatting(unittest.TestCase):
         self.assertEqual(build_idea_title(raw), "Add slash command with details on line two")
         body = build_idea_body(raw)
         self.assertTrue(body.startswith("Add slash command\nwith details on line two"))
-        self.assertIn("/idea", body)
+        self.assertIn("!idea", body)
 
     def test_long_title_trimmed_cleanly(self):
         raw = (
@@ -152,7 +152,7 @@ class TestGitHubIssueCreation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs_post["json"]["labels"], [IDEA_LABEL])
         self.assertEqual(kwargs_post["json"]["title"], "Add reminder command")
         self.assertIn("Add reminder command", kwargs_post["json"]["body"])
-        self.assertIn("/idea", kwargs_post["json"]["body"])
+        self.assertIn("!idea", kwargs_post["json"]["body"])
 
     async def test_creates_missing_label_then_files_issue(self):
         issue_url = f"https://github.com/{IDEA_REPO}/issues/43"
@@ -249,30 +249,55 @@ class TestIdeaCommand(unittest.IsolatedAsyncioTestCase):
     def _make_bot_and_ctx(self, *, is_owner: bool, web_client=None):
         bot = MagicMock()
         bot.is_owner = AsyncMock(return_value=is_owner)
+        bot.can_run = AsyncMock(return_value=True)
         bot.web_client = web_client or FakeSession()
+        bot.tree = MagicMock()
 
         ctx = MagicMock()
+        ctx.bot = bot
         ctx.author = MagicMock(id=123456789)
         ctx.defer = AsyncMock()
         ctx.reply = AsyncMock()
         return bot, ctx
 
-    async def test_non_owner_gets_ephemeral_refusal(self):
+    async def test_idea_is_prefix_only_and_not_registered_as_slash_command(self):
+        bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
+        await bot.add_cog(Dev(bot))
+
+        prefix_cmd = bot.get_command("idea")
+        self.assertIsNotNone(prefix_cmd)
+        self.assertIsInstance(prefix_cmd, commands.Command)
+        self.assertNotIsInstance(prefix_cmd, commands.HybridCommand)
+        self.assertIsNone(getattr(prefix_cmd, "app_command", None))
+        self.assertIsNone(bot.tree.get_command("idea"))
+
+    async def test_non_owner_rejected_by_owner_check_and_silently_ignored(self):
         session = FakeSession()
         bot, ctx = self._make_bot_and_ctx(is_owner=False, web_client=session)
         cog = Dev(bot)
+        ctx.command = cog.idea
 
-        await cog.idea.callback(cog, ctx, text="Should not be filed")
+        with self.assertRaises(commands.NotOwner) as err_ctx:
+            await cog.idea.can_run(ctx)
 
         bot.is_owner.assert_awaited_once_with(ctx.author)
         ctx.defer.assert_not_awaited()
-        ctx.reply.assert_awaited_once()
-        args, kwargs = ctx.reply.call_args
-        self.assertTrue(kwargs.get("ephemeral"))
-        self.assertIn("owner", args[0].lower())
+        ctx.reply.assert_not_awaited()
         self.assertEqual(session.calls, [])
 
-    async def test_owner_blank_text_gets_ephemeral_warning(self):
+        handler = ErrorHandler(bot)
+        await handler.on_command_error(ctx, err_ctx.exception)
+        ctx.reply.assert_not_awaited()
+
+    async def test_owner_passes_owner_check(self):
+        session = FakeSession()
+        bot, ctx = self._make_bot_and_ctx(is_owner=True, web_client=session)
+        cog = Dev(bot)
+
+        self.assertTrue(await cog.idea.can_run(ctx))
+        bot.is_owner.assert_awaited_once_with(ctx.author)
+
+    async def test_owner_blank_text_gets_warning(self):
         session = FakeSession()
         bot, ctx = self._make_bot_and_ctx(is_owner=True, web_client=session)
         cog = Dev(bot)
@@ -281,10 +306,10 @@ class TestIdeaCommand(unittest.IsolatedAsyncioTestCase):
 
         ctx.defer.assert_not_awaited()
         ctx.reply.assert_awaited_once()
-        self.assertTrue(ctx.reply.call_args.kwargs.get("ephemeral"))
+        self.assertNotIn("ephemeral", ctx.reply.call_args.kwargs)
         self.assertEqual(session.calls, [])
 
-    async def test_owner_files_issue_and_gets_ephemeral_url_reply(self):
+    async def test_owner_files_issue_and_gets_confirmation_card(self):
         issue_url = f"https://github.com/{IDEA_REPO}/issues/99"
         session = FakeSession(
             get_responses=[FakeResponse(200, {"name": IDEA_LABEL})],
@@ -305,10 +330,10 @@ class TestIdeaCommand(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_test_token"}):
             await cog.idea.callback(cog, ctx, text="Add polls feature")
 
-        ctx.defer.assert_awaited_once_with(ephemeral=True)
+        ctx.defer.assert_not_awaited()
         ctx.reply.assert_awaited_once()
         reply_kwargs = ctx.reply.call_args.kwargs
-        self.assertTrue(reply_kwargs.get("ephemeral"))
+        self.assertNotIn("ephemeral", reply_kwargs)
         view = reply_kwargs.get("view")
         self.assertIsInstance(view, NotificationCardView)
         self.assertIn(issue_url, _extract_view_text(view))
@@ -318,7 +343,7 @@ class TestIdeaCommand(unittest.IsolatedAsyncioTestCase):
         cog = Dev(bot)
         self.assertEqual(get_command_permissions(cog.idea), "Owner Only")
 
-    async def test_error_handler_unwraps_hybrid_github_error_ephemerally(self):
+    async def test_error_handler_renders_prefix_github_config_error(self):
         bot = MagicMock()
         bot.tree = MagicMock()
         handler = ErrorHandler(bot)
@@ -329,17 +354,17 @@ class TestIdeaCommand(unittest.IsolatedAsyncioTestCase):
         ctx.command.signature = "<text>"
         ctx.cog = MagicMock()
         ctx.cog.qualified_name = "Dev"
-        ctx.prefix = "/"
+        ctx.prefix = "!"
         ctx.reply = AsyncMock()
 
         gh_err = GitHubConfigError("GITHUB_TOKEN is not configured.")
-        wrapped = commands.HybridCommandError(app_commands.CommandInvokeError(MagicMock(), gh_err))
+        wrapped = commands.CommandInvokeError(gh_err)
 
         await handler.on_command_error(ctx, wrapped)
 
         ctx.reply.assert_awaited_once()
         reply_kwargs = ctx.reply.call_args.kwargs
-        self.assertTrue(reply_kwargs.get("ephemeral"))
+        self.assertNotIn("ephemeral", reply_kwargs)
         view = reply_kwargs.get("view")
         self.assertIsInstance(view, ErrorCardView)
         self.assertIn("GITHUB_TOKEN is not configured.", _extract_view_text(view))
