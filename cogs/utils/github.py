@@ -46,7 +46,7 @@ def build_idea_title(text: str, max_length: int = TITLE_MAX_LENGTH) -> str:
 def build_idea_body(text: str) -> str:
     """Builds the GitHub issue body containing the full idea text and Discord footer."""
     cleaned = text.strip()
-    return f"{cleaned}\n\n---\n_Filed from Discord via `/idea`_"
+    return f"{cleaned}\n\n---\n_Filed from Discord via `!idea`_"
 
 
 def _build_headers(token: str) -> dict:

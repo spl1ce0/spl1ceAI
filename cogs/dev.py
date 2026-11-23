@@ -26,7 +26,6 @@ class Dev(cmds.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.idea._is_owner = True
 
 
     @cmds.group(name='extensions', aliases=['ext'])
@@ -508,20 +507,14 @@ class Dev(cmds.Cog):
         view = build_guild_welcome_card(self.bot)
         await ctx.reply(view=view, ephemeral=True)
 
-    @cmds.hybrid_command(name="idea")
-    @discord.app_commands.describe(text="The project idea to file as a GitHub issue on spl1ce0/spl1ceAI")
+    @cmds.command(name="idea")
+    @cmds.is_owner()
     async def idea(self, ctx: Context, *, text: str):
         """[Owner Only] Files a project idea as a GitHub issue on spl1ce0/spl1ceAI."""
-        if not await self.bot.is_owner(ctx.author):
-            await ctx.reply(f"{Emojis.ERROR} Only the bot owner can use `/idea`.", ephemeral=True)
-            return
-
         cleaned = text.strip()
         if not cleaned:
-            await ctx.reply(f"{Emojis.WARNING} Please provide some text for the idea.", ephemeral=True)
+            await ctx.reply(f"{Emojis.WARNING} Please provide some text for the idea.")
             return
-
-        await ctx.defer(ephemeral=True)
 
         issue = await create_idea_issue(self.bot.web_client, cleaned)
 
@@ -537,7 +530,7 @@ class Dev(cmds.Cog):
             footer=footer,
             buttons=[open_btn],
         )
-        await ctx.reply(view=view, ephemeral=True)
+        await ctx.reply(view=view)
 
 
 class LogFileSelect(discord.ui.Select):
