@@ -463,7 +463,7 @@ class Dev(cmds.Cog):
     @cmds.is_owner()
     @discord.app_commands.describe(guild="The server ID to audit (or 'this' for current server)")
     async def inspect_guild(self, ctx: Context, guild: str = "this"):
-        """[Owner Only] Deep intelligence audit on any server across settings, telemetry, commands, and AI queries."""
+        """[Owner Only] Deep audit on any server across settings, telemetry, commands, and AI queries."""
         await ctx.defer(ephemeral=True)
         if guild == "this" and ctx.guild:
             target_gid = ctx.guild.id
